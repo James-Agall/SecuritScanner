@@ -4,21 +4,22 @@ from analyzer import SecurityHeaderAnalyzer
 from xss_scanner import XSSScanner # <--- Import the new plugin
 
 if __name__ == "__main__":
-    # 1. NEW TARGET: An intentionally vulnerable site to test our active scanner
+    # 1. Target our local Flask app, and TURN ON local testing mode!
     roe_config = {
-        "allowed_domains": ["testphp.vulnweb.com"],
+        "allowed_domains": ["localhost", "127.0.0.1"],
         "allowed_cidrs": [], 
-        "allowed_ports": [80, 443],
-        "excluded_paths": ["/logout", "/Mod_Rewrite_shop/Buy"] # Avoiding cart actions
+        "allowed_ports": [5000], # Flask runs on 5000 by default
+        "excluded_paths": [],
+        "allow_local_testing": True # <--- THE NEW FLAG TO BYPASS SSRF PROTECTION
     }
     
     enforcer = ScopeEnforcer(roe_config)
 
-    # 2. Seed the crawler with a URL that HAS parameters, so the XSS scanner has something to test!
+    # 2. Seed the crawler with our vulnerable search page
     crawler = HTMLCrawler(
-        seed_url="http://testphp.vulnweb.com/listproducts.php?cat=1", 
+        seed_url="http://localhost:5000/search?query=hello", 
         enforcer=enforcer, 
-        max_pages=25, 
+        max_pages=10, 
         delay=0.1
     )
 
