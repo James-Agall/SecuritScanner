@@ -10,6 +10,7 @@ class ScopeEnforcer:
         self.allowed_cidrs = [ipaddress.ip_network(cidr, strict=False) for cidr in scope_config.get("allowed_cidrs", [])]
         self.allowed_ports = set(scope_config.get("allowed_ports", [80, 443]))
         self.excluded_paths = scope_config.get("excluded_paths", [])
+        self.allow_local_testing = scope_config.get("allow_local_testing", False)
 
     def check(self, url: str) -> Tuple[bool, str]:
         try:
@@ -62,7 +63,9 @@ class ScopeEnforcer:
                 if ip_obj in cidr: return True, "IP in allowed CIDR."
             return False, f"DENIED: IP {ip_str} outside allowed CIDRs."
         
-        if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
+        if self.allow_local_testing and (hostname == "localhost" or hostname == "127.0.0.1"):
+            return True, f"IP {ip_str} is allowed for local testing."
+        elif ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
             return False, f"DENIED: IP {ip_str} is internal/private (SSRF Protection)."
         return True, f"IP {ip_str} is public."
 
