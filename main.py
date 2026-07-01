@@ -3,7 +3,10 @@ from crawler import HTMLCrawler
 from analyzer import SecurityHeaderAnalyzer
 from xss_scanner import XSSScanner # <--- Import the new plugin
 
+from database import init_db, save_scan, save_vulnerability
 if __name__ == "__main__":
+    init_db()
+    scan_id = save_scan("http://" + "localhost")
     # 1. Target our local Flask app, and TURN ON local testing mode!
     roe_config = {
         "allowed_domains": ["localhost", "127.0.0.1"],
@@ -46,6 +49,7 @@ if __name__ == "__main__":
     for i, vuln in enumerate(header_findings, 1):
         print(f"[{i}] {vuln['severity']} | {vuln['type']}")
         print(f"    ↳ {vuln['url']}")
+        save_vulnerability(scan_id, vuln)
 
     # Print XSS Findings
     print(f"\n--- ACTIVE FINDINGS: {len(xss_findings)} XSS Vulnerabilities ---")
@@ -58,3 +62,4 @@ if __name__ == "__main__":
             print(f"    🎯 Vulnerable Parameter: {vuln['vulnerable_param']}")
             print(f"    💉 Payload that worked: {vuln['payload_used']}")
             print(f"    🛠️ Fix: {vuln['remediation']}")
+            save_vulnerability(scan_id, vuln)
