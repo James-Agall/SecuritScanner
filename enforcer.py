@@ -3,7 +3,8 @@ import ipaddress
 import socket
 import requests
 import urllib3
-from typing import Dict, Tuple, Any
+from typing import Dict, Optional, Tuple, Any
+from evasion import get_random_headers, apply_stealth_delay, get_proxy_dict
 
 # Scanners intentionally probe targets with untrusted/self-signed certs (e.g. local_target.py),
 # so cert verification is disabled here; suppress the resulting noisy warning.
@@ -16,6 +17,8 @@ class ScopeEnforcer:
         self.allowed_ports = set(scope_config.get("allowed_ports", [80, 443]))
         self.excluded_paths = scope_config.get("excluded_paths", [])
         self.allow_local_testing = scope_config.get("allow_local_testing", False)
+        self.stealth_mode = scope_config.get("stealth_mode", False)
+        self.proxies = get_proxy_dict(scope_config.get("proxy_url", ""))
 
     def check(self, url: str) -> Tuple[bool, str]:
         try:
@@ -74,36 +77,44 @@ class ScopeEnforcer:
             return False, f"DENIED: IP {ip_str} is internal/private (SSRF Protection)."
         return True, f"IP {ip_str} is public."
 
-def safe_http_request(url: str, enforcer: ScopeEnforcer):
+def safe_http_request(url: str, enforcer: ScopeEnforcer, proxies: Optional[Dict[str, str]] = None):
     # 1. Check the scope, but print the reason if it fails!
     is_allowed, reason = enforcer.check(url)
-    if not is_allowed: 
+    if not is_allowed:
         print(f"    ↳ [!] BLOCKED BY SCOPE: {reason}")
         return None
-    
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-    }
-    
+
+    # 2. Build headers/delay/proxy from the evasion engine when stealth mode is on,
+    #    otherwise fall back to a plain static header (no delay, no proxy override).
+    if enforcer.stealth_mode:
+        headers = get_random_headers()
+        apply_stealth_delay()
+    else:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        }
+
+    request_proxies = proxies if proxies is not None else enforcer.proxies
+
     try:
-        # 2. Make the request
-        response = requests.get(url, headers=headers, allow_redirects=False, timeout=10, verify=False)
-        
-        # 3. Handle redirects, but print where we are going!
+        # 3. Make the request
+        response = requests.get(url, headers=headers, proxies=request_proxies, allow_redirects=False, timeout=10, verify=False)
+
+        # 4. Handle redirects, but print where we are going!
         if response.status_code in [301, 302, 303, 307, 308]:
             redirect_url = response.headers.get('Location')
             if redirect_url:
                 redirect_url = urllib.parse.urljoin(url, redirect_url)
                 print(f"    ↳ [i] Following redirect to: {redirect_url}")
-                return safe_http_request(redirect_url, enforcer)
-                
-        # 4. If we got a 403 Forbidden or 406 Not Acceptable, the WAF blocked us!
+                return safe_http_request(redirect_url, enforcer, proxies=proxies)
+
+        # 5. If we got a 403 Forbidden or 406 Not Acceptable, the WAF blocked us!
         if response.status_code in [403, 406, 429]:
             print(f"    ↳ [!] WAF/Bot Protection triggered! Status: {response.status_code}")
-            
+
         return response
-        
+
     except Exception as e:
-        # 5. Print the exact network error (Timeout, Connection Refused, etc.)
+        # 6. Print the exact network error (Timeout, Connection Refused, etc.)
         print(f"    ↳ [!] NETWORK ERROR: {e}")
         return None

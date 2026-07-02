@@ -18,7 +18,9 @@ if __name__ == "__main__":
         "allowed_cidrs": [],
         "allowed_ports": [5000],
         "excluded_paths": [],
-        "allow_local_testing": True
+        "allow_local_testing": True,
+        "stealth_mode": True,
+        "proxy_url": ""
     }
 
     enforcer = ScopeEnforcer(roe_config)
