@@ -1,57 +1,56 @@
 from enforcer import ScopeEnforcer
 from crawler import HTMLCrawler
 from analyzer import SecurityHeaderAnalyzer
-from xss_scanner import XSSScanner # <--- Import the new plugin
-
+from xss_scanner import XSSScanner
+from sqli_scanner import SQLiScanner
 from database import init_db, save_scan, save_vulnerability
+from reporter import generate_html_report
+from fuzzer import DirectoryFuzzer
 if __name__ == "__main__":
     init_db()
-    scan_id = save_scan("http://" + "localhost")
-    # 1. Target our local Flask app, and TURN ON local testing mode!
+    scan_id = save_scan("http://localhost:5000")
+
     roe_config = {
         "allowed_domains": ["localhost", "127.0.0.1"],
-        "allowed_cidrs": [], 
-        "allowed_ports": [5000], # Flask runs on 5000 by default
+        "allowed_cidrs": [],
+        "allowed_ports": [5000],
         "excluded_paths": [],
-        "allow_local_testing": True # <--- THE NEW FLAG TO BYPASS SSRF PROTECTION
+        "allow_local_testing": True
     }
-    
+
     enforcer = ScopeEnforcer(roe_config)
 
-    # 2. Seed the crawler with our vulnerable search page
+    # Start at the root so the crawler has to find the links!
     crawler = HTMLCrawler(
-        seed_url="http://localhost:5000/search?query=hello", 
-        enforcer=enforcer, 
-        max_pages=10, 
+        seed_url="http://localhost:5000/", 
+        enforcer=enforcer,
+        max_pages=10,
         delay=0.1
     )
 
-    # 3. Execute the Crawler
     results = crawler.crawl()
 
-    # 4. Execute Passive Plugin (Headers)
     analyzer = SecurityHeaderAnalyzer()
     header_findings = analyzer.analyze(results)
 
-    # 5. Execute Active Plugin (XSS)
     xss_scanner = XSSScanner(enforcer)
     xss_findings = xss_scanner.scan(results)
 
-    # ==========================================
-    # FINAL COMBINED REPORT
-    # ==========================================
+    sqli_scanner = SQLiScanner(enforcer)
+    sqli_findings = sqli_scanner.scan(results)
+    fuzzer = DirectoryFuzzer(enforcer)
+    fuzz_findings = fuzzer.scan(results)
+
     print("\n" + "="*60)
     print("🚨 COMPREHENSIVE SECURITY AUDIT REPORT")
     print("="*60)
-    
-    # Print Header Findings
+
     print(f"\n--- PASSIVE FINDINGS: {len(header_findings)} Header Misconfigurations ---")
     for i, vuln in enumerate(header_findings, 1):
         print(f"[{i}] {vuln['severity']} | {vuln['type']}")
         print(f"    ↳ {vuln['url']}")
         save_vulnerability(scan_id, vuln)
 
-    # Print XSS Findings
     print(f"\n--- ACTIVE FINDINGS: {len(xss_findings)} XSS Vulnerabilities ---")
     if not xss_findings:
         print("✅ No Reflected XSS found.")
@@ -63,3 +62,28 @@ if __name__ == "__main__":
             print(f"    💉 Payload that worked: {vuln['payload_used']}")
             print(f"    🛠️ Fix: {vuln['remediation']}")
             save_vulnerability(scan_id, vuln)
+
+    print(f"\n--- SQLI FINDINGS: {len(sqli_findings)} SQL Injection Vulnerabilities ---")
+    if not sqli_findings:
+        print("✅ No Error-Based SQLi found.")
+    else:
+        for i, vuln in enumerate(sqli_findings, 1):
+            print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
+            print(f"    🌐 URL: {vuln['url']}")
+            print(f"    🎯 Vulnerable Parameter: {vuln['vulnerable_param']}")
+            print(f"    💉 Payload that worked: {vuln['payload_used']}")
+            print(f"    🛠️ Fix: {vuln['remediation']}")
+            save_vulnerability(scan_id, vuln)
+
+    print(f"\n--- FUZZING FINDINGS: {len(fuzz_findings)} Exposed Paths ---")
+    if not fuzz_findings:
+        print("✅ No exposed sensitive paths found.")
+    else:
+        for i, vuln in enumerate(fuzz_findings, 1):
+            print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
+            print(f"    🌐 URL: {vuln['url']}")
+            print(f"     Details: {vuln['description']}")
+            print(f"    🛠️ Fix: {vuln['remediation']}")
+            save_vulnerability(scan_id, vuln)
+    # Generate the final HTML report
+generate_html_report()
