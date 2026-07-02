@@ -6,9 +6,11 @@ from sqli_scanner import SQLiScanner
 from database import init_db, save_scan, save_vulnerability
 from reporter import generate_html_report
 from fuzzer import DirectoryFuzzer
+from csrf_scanner import CSRFScanner
+from ssl_scanner import SSLScanner
 if __name__ == "__main__":
     init_db()
-    scan_id = save_scan("http://localhost:5000")
+    scan_id = save_scan("https://localhost:5000")
 
     roe_config = {
         "allowed_domains": ["localhost", "127.0.0.1"],
@@ -22,7 +24,7 @@ if __name__ == "__main__":
 
     # Start at the root so the crawler has to find the links!
     crawler = HTMLCrawler(
-        seed_url="http://localhost:5000/", 
+        seed_url="https://localhost:5000/",
         enforcer=enforcer,
         max_pages=10,
         delay=0.1
@@ -40,6 +42,12 @@ if __name__ == "__main__":
     sqli_findings = sqli_scanner.scan(results)
     fuzzer = DirectoryFuzzer(enforcer)
     fuzz_findings = fuzzer.scan(results)
+
+    csrf_scanner = CSRFScanner(enforcer)
+    csrf_findings = csrf_scanner.scan(results)
+
+    ssl_scanner = SSLScanner(enforcer, "localhost")
+    ssl_findings = ssl_scanner.scan()
 
     print("\n" + "="*60)
     print("🚨 COMPREHENSIVE SECURITY AUDIT REPORT")
@@ -80,6 +88,28 @@ if __name__ == "__main__":
         print("✅ No exposed sensitive paths found.")
     else:
         for i, vuln in enumerate(fuzz_findings, 1):
+            print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
+            print(f"    🌐 URL: {vuln['url']}")
+            print(f"     Details: {vuln['description']}")
+            print(f"    🛠️ Fix: {vuln['remediation']}")
+            save_vulnerability(scan_id, vuln)
+
+    print(f"\n--- CSRF FINDINGS: {len(csrf_findings)} Forms Missing CSRF Protection ---")
+    if not csrf_findings:
+        print("✅ No missing CSRF tokens found.")
+    else:
+        for i, vuln in enumerate(csrf_findings, 1):
+            print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
+            print(f"    🌐 URL: {vuln['url']}")
+            print(f"    🎯 Vulnerable Form Action: {vuln['vulnerable_param']}")
+            print(f"    🛠️ Fix: {vuln['remediation']}")
+            save_vulnerability(scan_id, vuln)
+
+    print(f"\n--- SSL/TLS FINDINGS: {len(ssl_findings)} Certificate/Configuration Issues ---")
+    if not ssl_findings:
+        print("✅ No SSL/TLS issues found.")
+    else:
+        for i, vuln in enumerate(ssl_findings, 1):
             print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
             print(f"    🌐 URL: {vuln['url']}")
             print(f"     Details: {vuln['description']}")

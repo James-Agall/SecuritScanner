@@ -2,7 +2,12 @@ import urllib.parse
 import ipaddress
 import socket
 import requests
+import urllib3
 from typing import Dict, Tuple, Any
+
+# Scanners intentionally probe targets with untrusted/self-signed certs (e.g. local_target.py),
+# so cert verification is disabled here; suppress the resulting noisy warning.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class ScopeEnforcer:
     def __init__(self, scope_config: Dict[str, Any]):
@@ -82,7 +87,7 @@ def safe_http_request(url: str, enforcer: ScopeEnforcer):
     
     try:
         # 2. Make the request
-        response = requests.get(url, headers=headers, allow_redirects=False, timeout=10)
+        response = requests.get(url, headers=headers, allow_redirects=False, timeout=10, verify=False)
         
         # 3. Handle redirects, but print where we are going!
         if response.status_code in [301, 302, 303, 307, 308]:
