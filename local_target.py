@@ -1,6 +1,7 @@
 from flask import Flask, request
 import sqlite3
 import os
+import subprocess
 import datetime
 from cryptography import x509
 from cryptography.x509.oid import NameOID
@@ -72,6 +73,7 @@ def index():
     <ul>
         <li><a href='/user?id=1'>Go to User 1</a></li>
         <li><a href='/transfer'>Transfer Money</a></li>
+        <li><a href='/ping'>Ping a Host</a></li>
     </ul>
     """
 
@@ -121,6 +123,23 @@ def transfer():
         <label>Amount: $</label>
         <input type="number" name="amount" value="100">
         <button type="submit">Transfer</button>
+    </form>
+    """
+
+# Vulnerable to OS Command Injection via unsanitized shell interpolation
+@app.route('/ping', methods=['GET', 'POST'])
+def ping():
+    if request.method == 'POST':
+        target = request.form.get('target')
+        # VULNERABLE: User input passed directly to the shell
+        result = subprocess.run(f"ping -n 2 {target}", shell=True, capture_output=True, text=True)
+        return f"<h1>Ping Results</h1><pre>{result.stdout}</pre>"
+    return """
+    <h1>Ping a Host</h1>
+    <form method="POST" action="/ping">
+        <label>IP Address or Hostname:</label>
+        <input type="text" name="target" value="127.0.0.1">
+        <button type="submit">Ping</button>
     </form>
     """
 

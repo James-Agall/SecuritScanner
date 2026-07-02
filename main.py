@@ -8,6 +8,7 @@ from reporter import generate_html_report
 from fuzzer import DirectoryFuzzer
 from csrf_scanner import CSRFScanner
 from ssl_scanner import SSLScanner
+from cmd_injection_scanner import CommandInjectionScanner
 if __name__ == "__main__":
     init_db()
     scan_id = save_scan("https://localhost:5000")
@@ -48,6 +49,9 @@ if __name__ == "__main__":
 
     ssl_scanner = SSLScanner(enforcer, "localhost")
     ssl_findings = ssl_scanner.scan()
+
+    cmd_injection_scanner = CommandInjectionScanner(enforcer)
+    cmd_injection_findings = cmd_injection_scanner.scan(results)
 
     print("\n" + "="*60)
     print("🚨 COMPREHENSIVE SECURITY AUDIT REPORT")
@@ -113,6 +117,18 @@ if __name__ == "__main__":
             print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
             print(f"    🌐 URL: {vuln['url']}")
             print(f"     Details: {vuln['description']}")
+            print(f"    🛠️ Fix: {vuln['remediation']}")
+            save_vulnerability(scan_id, vuln)
+
+    print(f"\n--- COMMAND INJECTION FINDINGS: {len(cmd_injection_findings)} OS Command Injection Vulnerabilities ---")
+    if not cmd_injection_findings:
+        print("✅ No OS Command Injection found.")
+    else:
+        for i, vuln in enumerate(cmd_injection_findings, 1):
+            print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
+            print(f"    🌐 URL: {vuln['url']}")
+            print(f"    🎯 Vulnerable Parameter: {vuln['vulnerable_param']}")
+            print(f"    💉 Payload that worked: {vuln['payload_used']}")
             print(f"    🛠️ Fix: {vuln['remediation']}")
             save_vulnerability(scan_id, vuln)
     # Generate the final HTML report
