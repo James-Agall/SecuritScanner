@@ -9,6 +9,7 @@ from fuzzer import DirectoryFuzzer
 from csrf_scanner import CSRFScanner
 from ssl_scanner import SSLScanner
 from cmd_injection_scanner import CommandInjectionScanner
+from idor_scanner import IDORScanner
 if __name__ == "__main__":
     init_db()
     scan_id = save_scan("https://localhost:5000")
@@ -20,7 +21,9 @@ if __name__ == "__main__":
         "excluded_paths": [],
         "allow_local_testing": True,
         "stealth_mode": True,
-        "proxy_url": ""
+        "proxy_url": "",
+        "test_username": "admin",
+        "test_password": "admin123"
     }
 
     enforcer = ScopeEnforcer(roe_config)
@@ -54,6 +57,10 @@ if __name__ == "__main__":
 
     cmd_injection_scanner = CommandInjectionScanner(enforcer)
     cmd_injection_findings = cmd_injection_scanner.scan(results)
+
+    idor_scanner = IDORScanner(enforcer, roe_config["test_username"], roe_config["test_password"])
+    idor_scanner.login(results[0]['url'])
+    idor_findings = idor_scanner.scan(results)
 
     print("\n" + "="*60)
     print("🚨 COMPREHENSIVE SECURITY AUDIT REPORT")
@@ -127,6 +134,18 @@ if __name__ == "__main__":
         print("✅ No OS Command Injection found.")
     else:
         for i, vuln in enumerate(cmd_injection_findings, 1):
+            print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
+            print(f"    🌐 URL: {vuln['url']}")
+            print(f"    🎯 Vulnerable Parameter: {vuln['vulnerable_param']}")
+            print(f"    💉 Payload that worked: {vuln['payload_used']}")
+            print(f"    🛠️ Fix: {vuln['remediation']}")
+            save_vulnerability(scan_id, vuln)
+
+    print(f"\n--- IDOR FINDINGS: {len(idor_findings)} Insecure Direct Object References ---")
+    if not idor_findings:
+        print("✅ No IDOR vulnerabilities found.")
+    else:
+        for i, vuln in enumerate(idor_findings, 1):
             print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
             print(f"    🌐 URL: {vuln['url']}")
             print(f"    🎯 Vulnerable Parameter: {vuln['vulnerable_param']}")

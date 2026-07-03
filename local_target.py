@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, session, redirect, url_for
 import sqlite3
 import os
 import subprocess
@@ -10,6 +10,13 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 
 app = Flask(__name__)
+app.secret_key = "local-dev-only-not-a-real-secret"
+
+# Hardcoded test accounts for the authenticated/IDOR scanning phase
+USERS = {
+    "admin": "admin123",
+    "user1": "user123",
+}
 
 def generate_self_signed_cert(cert_path='cert.pem', key_path='key.pem'):
     """Generates a self-signed cert/key pair for local HTTPS testing, if they don't already exist."""
@@ -52,18 +59,18 @@ def generate_self_signed_cert(cert_path='cert.pem', key_path='key.pem'):
 
 def init_user_db():
     db_path = 'users.db'
-    if not os.path.exists(db_path):
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE users (
-                id INTEGER PRIMARY KEY,
-                username TEXT
-            )
-        ''')
-        cursor.execute("INSERT INTO users (id, username) VALUES (1, 'admin')")
-        conn.commit()
-        conn.close()
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY,
+            username TEXT
+        )
+    ''')
+    cursor.execute("INSERT OR IGNORE INTO users (id, username) VALUES (1, 'admin')")
+    cursor.execute("INSERT OR IGNORE INTO users (id, username) VALUES (2, 'user1')")
+    conn.commit()
+    conn.close()
 
 @app.route('/')
 def index():
@@ -74,8 +81,53 @@ def index():
         <li><a href='/user?id=1'>Go to User 1</a></li>
         <li><a href='/transfer'>Transfer Money</a></li>
         <li><a href='/ping'>Ping a Host</a></li>
+        <li><a href='/login'>Login</a></li>
     </ul>
     """
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        if USERS.get(username) == password:
+            session['logged_in'] = True
+            session['username'] = username
+            return redirect(url_for('profile', user_id=1))
+        return "Invalid credentials"
+    return """
+    <h1>Login</h1>
+    <form method="POST" action="/login">
+        <label>Username:</label>
+        <input type="text" name="username">
+        <br>
+        <label>Password:</label>
+        <input type="password" name="password">
+        <br>
+        <button type="submit">Login</button>
+    </form>
+    """
+
+# Vulnerable to IDOR: any logged-in user can view any other user's profile
+# by simply changing the user_id parameter, since there's no ownership check.
+@app.route('/profile')
+def profile():
+    if not session.get('logged_in'):
+        return "Access Denied"
+
+    user_id = request.args.get('user_id')
+    try:
+        conn = sqlite3.connect('users.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT username FROM users WHERE id = ?", (user_id,))
+        result = cursor.fetchone()
+        conn.close()
+        if result:
+            return f"<h1>Profile</h1><p>Username: {result[0]}</p>"
+        else:
+            return "User not found"
+    except Exception as e:
+        return str(e)
 
 @app.route('/search')
 def search():
