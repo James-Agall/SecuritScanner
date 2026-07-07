@@ -38,8 +38,13 @@ class TestParseXmlRoute:
         secret_file = tmp_path.parent / f"xxe_secret_{tmp_path.name}.txt"
         secret_file.write_text("TOP-SECRET-CONTENTS")
         try:
+            # Path.as_uri() is the portable way to build a file:// URI: on
+            # POSIX it's "file:///tmp/...", on Windows it correctly becomes
+            # "file:///C:/Users/..." (forward slashes, triple-slash before
+            # the drive letter). Naively f-string-ing a WindowsPath in gives
+            # "file://C:\Users\..." which lxml's URI parser rejects outright.
             payload = f'''<?xml version="1.0"?>
-<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file://{secret_file}">]>
+<!DOCTYPE foo [<!ENTITY xxe SYSTEM "{secret_file.as_uri()}">]>
 <data>&xxe;</data>'''
             resp = local_target_client.post("/parse-xml", data=payload, content_type="application/xml")
             assert b"TOP-SECRET-CONTENTS" in resp.data
