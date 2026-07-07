@@ -1,5 +1,3 @@
-import os
-import sqlite3
 import pytest
 
 import database

@@ -1,65 +1,77 @@
-import urllib.parse
 import ipaddress
 import socket
+import urllib.parse
+from typing import Any
+
 import requests
 import urllib3
-from typing import Dict, Optional, Tuple, Any
-from evasion import get_random_headers, apply_stealth_delay, get_proxy_dict
+
+from evasion import apply_stealth_delay, get_proxy_dict, get_random_headers
 
 # Scanners intentionally probe targets with untrusted/self-signed certs (e.g. local_target.py),
 # so cert verification is disabled here; suppress the resulting noisy warning.
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class ScopeEnforcer:
-    def __init__(self, scope_config: Dict[str, Any]):
-        self.allowed_domains = [d.lower() for d in scope_config.get("allowed_domains", [])]
-        self.allowed_cidrs = [ipaddress.ip_network(cidr, strict=False) for cidr in scope_config.get("allowed_cidrs", [])]
-        self.allowed_ports = set(scope_config.get("allowed_ports", [80, 443]))
+    def __init__(self, scope_config: dict[str, Any]):
+        self.allowed_domains: list[str] = [d.lower() for d in scope_config.get("allowed_domains", [])]
+        self.allowed_cidrs: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = [
+            ipaddress.ip_network(cidr, strict=False) for cidr in scope_config.get("allowed_cidrs", [])
+        ]
+        self.allowed_ports: set[int] = set(scope_config.get("allowed_ports", [80, 443]))
         self.excluded_paths = scope_config.get("excluded_paths", [])
         self.allow_local_testing = scope_config.get("allow_local_testing", False)
         self.stealth_mode = scope_config.get("stealth_mode", False)
-        self.proxies = get_proxy_dict(scope_config.get("proxy_url", ""))
+        self.proxies: dict[str, str] = get_proxy_dict(scope_config.get("proxy_url", ""))
 
-    def check(self, url: str) -> Tuple[bool, str]:
+    def check(self, url: str) -> tuple[bool, str]:
         try:
             parsed = urllib.parse.urlparse(url)
         except Exception:
             return False, "DENIED: Invalid URL format."
         if not parsed.scheme or not parsed.netloc:
             return False, "DENIED: Missing scheme or domain."
+        if parsed.hostname is None:
+            return False, "DENIED: malformed URL (no hostname)."
 
         domain_ok, domain_reason = self._check_domain(parsed.hostname)
-        if not domain_ok: return False, domain_reason
+        if not domain_ok:
+            return False, domain_reason
 
         port = parsed.port or (443 if parsed.scheme == 'https' else 80)
         port_ok, port_reason = self._check_port(port)
-        if not port_ok: return False, port_reason
+        if not port_ok:
+            return False, port_reason
 
         path_ok, path_reason = self._check_path(parsed.path)
-        if not path_ok: return False, path_reason
+        if not path_ok:
+            return False, path_reason
 
         ip_ok, ip_reason = self._check_ip_resolution(parsed.hostname)
-        if not ip_ok: return False, ip_reason
+        if not ip_ok:
+            return False, ip_reason
 
         return True, "ALLOWED"
 
-    def _check_domain(self, hostname: str) -> Tuple[bool, str]:
+    def _check_domain(self, hostname: str) -> tuple[bool, str]:
         hostname = hostname.lower()
         for allowed in self.allowed_domains:
-            if allowed == hostname: return True, "Domain exact match."
-            if allowed.startswith("*.") and hostname.endswith("." + allowed[2:]): return True, "Domain wildcard match."
+            if allowed == hostname:
+                return True, "Domain exact match."
+            if allowed.startswith("*.") and hostname.endswith("." + allowed[2:]):
+                return True, "Domain wildcard match."
         return False, f"DENIED: Domain '{hostname}' not allowed."
 
-    def _check_port(self, port: int) -> Tuple[bool, str]:
+    def _check_port(self, port: int) -> tuple[bool, str]:
         return (True, "Port allowed") if port in self.allowed_ports else (False, f"DENIED: Port {port} blocked.")
 
-    def _check_path(self, path: str) -> Tuple[bool, str]:
+    def _check_path(self, path: str) -> tuple[bool, str]:
         for excluded in self.excluded_paths:
             if path == excluded or path.startswith(excluded + "/") or path.startswith(excluded + "?"):
                 return False, f"DENIED: Path '{path}' excluded."
         return True, "Path allowed."
 
-    def _check_ip_resolution(self, hostname: str) -> Tuple[bool, str]:
+    def _check_ip_resolution(self, hostname: str) -> tuple[bool, str]:
         try:
             ip_str = socket.gethostbyname(hostname)
             ip_obj = ipaddress.ip_address(ip_str)
@@ -68,7 +80,8 @@ class ScopeEnforcer:
 
         if self.allowed_cidrs:
             for cidr in self.allowed_cidrs:
-                if ip_obj in cidr: return True, "IP in allowed CIDR."
+                if ip_obj in cidr:
+                    return True, "IP in allowed CIDR."
             return False, f"DENIED: IP {ip_str} outside allowed CIDRs."
         
         if self.allow_local_testing and (hostname == "localhost" or hostname == "127.0.0.1"):
@@ -77,7 +90,12 @@ class ScopeEnforcer:
             return False, f"DENIED: IP {ip_str} is internal/private (SSRF Protection)."
         return True, f"IP {ip_str} is public."
 
-def safe_http_request(url: str, enforcer: ScopeEnforcer, proxies: Optional[Dict[str, str]] = None):
+def safe_http_request(
+    url: str,
+    enforcer: ScopeEnforcer,
+    proxies: dict[str, str] | None = None,
+    allow_redirects: bool = True,
+) -> requests.Response | None:
     # 1. Check the scope, but print the reason if it fails!
     is_allowed, reason = enforcer.check(url)
     if not is_allowed:
@@ -100,13 +118,16 @@ def safe_http_request(url: str, enforcer: ScopeEnforcer, proxies: Optional[Dict[
         # 3. Make the request
         response = requests.get(url, headers=headers, proxies=request_proxies, allow_redirects=False, timeout=10, verify=False)
 
-        # 4. Handle redirects, but print where we are going!
-        if response.status_code in [301, 302, 303, 307, 308]:
+        # 4. Handle redirects, but print where we are going! Callers that need
+        #    the raw 30x response itself (e.g. the crawler storing a redirect
+        #    endpoint's own status/Location, or an open-redirect scanner) can
+        #    pass allow_redirects=False to get it back unfollowed.
+        if allow_redirects and response.status_code in [301, 302, 303, 307, 308]:
             redirect_url = response.headers.get('Location')
             if redirect_url:
                 redirect_url = urllib.parse.urljoin(url, redirect_url)
                 print(f"    ↳ [i] Following redirect to: {redirect_url}")
-                return safe_http_request(redirect_url, enforcer, proxies=proxies)
+                return safe_http_request(redirect_url, enforcer, proxies=proxies, allow_redirects=allow_redirects)
 
         # 5. If we got a 403 Forbidden or 406 Not Acceptable, the WAF blocked us!
         if response.status_code in [403, 406, 429]:

@@ -1,6 +1,9 @@
-from typing import List, Dict, Any
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
+
+from crawler import Asset
+from database import Vulnerability
 from enforcer import ScopeEnforcer, safe_http_request
+
 
 class CSRFScanner:
     """
@@ -13,9 +16,9 @@ class CSRFScanner:
     def __init__(self, enforcer: ScopeEnforcer):
         self.enforcer = enforcer
 
-    def scan(self, assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def scan(self, assets: list[Asset]) -> list[Vulnerability]:
         print("\n[*] Starting CSRF Token Analysis...")
-        vulnerabilities = []
+        vulnerabilities: list[Vulnerability] = []
 
         html_assets = [
             a for a in assets
@@ -31,7 +34,7 @@ class CSRFScanner:
                 continue
 
             response = safe_http_request(url, self.enforcer)
-            if not response:
+            if response is None:
                 continue
 
             try:
@@ -40,12 +43,12 @@ class CSRFScanner:
                 continue
 
             for form in soup.find_all('form'):
-                method = (form.get('method') or 'get').strip().lower()
+                method = (form.get('method') or 'get').strip().lower()  # type: ignore[union-attr]
                 if method != 'post':
                     continue
 
                 if not self._has_csrf_token(form):
-                    action = form.get('action') or "/"
+                    action: str = form.get('action') or "/"  # type: ignore[assignment]
                     vulnerabilities.append({
                         "type": "Missing CSRF Token on POST Form",
                         "severity": "MEDIUM",
@@ -59,16 +62,16 @@ class CSRFScanner:
         print(f"[*] CSRF analysis complete. Found {len(vulnerabilities)} forms without CSRF protection.")
         return self._deduplicate(vulnerabilities)
 
-    def _has_csrf_token(self, form) -> bool:
+    def _has_csrf_token(self, form: Tag) -> bool:
         for input_tag in form.find_all('input', {'type': 'hidden'}):
-            name = (input_tag.get('name') or '').lower()
+            name = (input_tag.get('name') or '').lower()  # type: ignore[union-attr]
             if any(hint in name for hint in self.CSRF_TOKEN_HINTS):
                 return True
         return False
 
-    def _deduplicate(self, vulns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        seen = set()
-        unique_vulns = []
+    def _deduplicate(self, vulns: list[Vulnerability]) -> list[Vulnerability]:
+        seen: set[tuple[str, str]] = set()
+        unique_vulns: list[Vulnerability] = []
         for v in vulns:
             key = (v['url'], v['vulnerable_param'])
             if key not in seen:

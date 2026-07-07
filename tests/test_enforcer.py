@@ -1,5 +1,5 @@
 import socket
-import pytest
+
 import responses as responses_lib
 
 from enforcer import ScopeEnforcer, safe_http_request
@@ -31,6 +31,14 @@ class TestScopeEnforcerDomain:
         # A control character in the netloc raises inside urlparse
         allowed, reason = enforcer.check("http://[::1")
         assert allowed is False
+
+    def test_malformed_url_with_none_hostname_is_denied(self, enforcer):
+        # A netloc of just ":8080" is truthy (so it passes the scheme/netloc
+        # check) but urlparse().hostname is None for it - this must be
+        # denied cleanly rather than raising when passed to hostname.lower().
+        allowed, reason = enforcer.check("http://:8080/")
+        assert allowed is False
+        assert "malformed URL" in reason
 
 
 class TestScopeEnforcerPort:

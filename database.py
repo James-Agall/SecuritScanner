@@ -1,7 +1,19 @@
 import sqlite3
 from datetime import datetime
+from typing import NotRequired, TypedDict
 
-def init_db():
+
+class Vulnerability(TypedDict):
+    type: str
+    severity: str
+    url: str
+    description: str
+    remediation: str
+    vulnerable_param: NotRequired[str]
+    payload_used: NotRequired[str]
+
+
+def init_db() -> None:
     conn = sqlite3.connect('scanner.db')
     c = conn.cursor()
     # Fixed the syntax error here!
@@ -16,7 +28,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-def save_scan(target_url):
+def save_scan(target_url: str) -> int | None:
     conn = sqlite3.connect('scanner.db')
     c = conn.cursor()
     c.execute('INSERT INTO scans (target_url, start_time, status) VALUES (?, ?, ?)',
@@ -26,7 +38,7 @@ def save_scan(target_url):
     conn.close()
     return scan_id
 
-def save_vulnerability(scan_id, vuln_dict):
+def save_vulnerability(scan_id: int | None, vuln_dict: Vulnerability) -> None:
     conn = sqlite3.connect('scanner.db')
     c = conn.cursor()
     c.execute('''

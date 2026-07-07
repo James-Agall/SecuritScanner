@@ -1,7 +1,10 @@
 import urllib.parse
+
 import requests
-from typing import List, Dict, Any
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
+
+from crawler import Asset
+from database import Vulnerability
 from enforcer import ScopeEnforcer
 
 
@@ -21,9 +24,9 @@ class CommandInjectionScanner:
             f"127.0.0.1 && echo {self.MARKER}",
         ]
 
-    def scan(self, assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def scan(self, assets: list[Asset]) -> list[Vulnerability]:
         print("\n[*] Starting OS Command Injection Scanner...")
-        vulnerabilities = []
+        vulnerabilities: list[Vulnerability] = []
 
         html_assets = [
             a for a in assets
@@ -49,16 +52,16 @@ class CommandInjectionScanner:
                 continue
 
             for form in soup.find_all('form'):
-                method = (form.get('method') or 'get').strip().lower()
+                method = (form.get('method') or 'get').strip().lower()  # type: ignore[union-attr]
                 if method != 'post':
                     continue
 
                 action = form.get('action') or page_url
-                form_url = urllib.parse.urljoin(page_url, action)
+                form_url: str = urllib.parse.urljoin(page_url, action)  # type: ignore[assignment,type-var]
 
                 text_inputs = [
                     inp for inp in form.find_all('input')
-                    if (inp.get('type') or 'text').lower() == 'text' and inp.get('name')
+                    if (inp.get('type') or 'text').lower() == 'text' and inp.get('name')  # type: ignore[union-attr]
                 ]
 
                 for target_input in text_inputs:
@@ -68,8 +71,8 @@ class CommandInjectionScanner:
         print(f"[*] Command Injection scan complete. Found {len(vulnerabilities)} vulnerabilities.")
         return self._deduplicate(vulnerabilities)
 
-    def _test_input(self, form, form_url: str, target_input, vulnerabilities: List[Dict[str, Any]]) -> bool:
-        param_name = target_input.get('name')
+    def _test_input(self, form: Tag, form_url: str, target_input: Tag, vulnerabilities: list[Vulnerability]) -> bool:
+        param_name: str = target_input.get('name')  # type: ignore[assignment]
 
         for payload in self.payloads:
             is_allowed, _ = self.enforcer.check(form_url)
@@ -99,18 +102,18 @@ class CommandInjectionScanner:
 
         return False
 
-    def _build_form_data(self, form, target_name: str, payload: str) -> Dict[str, str]:
-        form_data = {}
+    def _build_form_data(self, form: Tag, target_name: str, payload: str) -> dict[str, str]:
+        form_data: dict[str, str] = {}
         for inp in form.find_all('input'):
             name = inp.get('name')
             if not name:
                 continue
-            form_data[name] = payload if name == target_name else (inp.get('value') or '')
+            form_data[name] = payload if name == target_name else (inp.get('value') or '')  # type: ignore[assignment,index]
         return form_data
 
-    def _deduplicate(self, vulns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        seen = set()
-        unique_vulns = []
+    def _deduplicate(self, vulns: list[Vulnerability]) -> list[Vulnerability]:
+        seen: set[tuple[str, str]] = set()
+        unique_vulns: list[Vulnerability] = []
         for v in vulns:
             key = (v['url'], v['vulnerable_param'])
             if key not in seen:

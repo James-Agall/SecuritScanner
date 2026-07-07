@@ -1,10 +1,10 @@
 import datetime
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from cryptography import x509
-from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 
 from ssl_scanner import SSLScanner
 
@@ -15,7 +15,7 @@ def build_self_signed_der(days_valid=365, days_from_now=0):
         x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
         x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
     ])
-    now = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=days_from_now)
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=days_from_now)
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)

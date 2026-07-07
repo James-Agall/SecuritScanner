@@ -1,0 +1,3 @@
+Welcome to the local target application!
+
+This is a sample document served by the /view-doc endpoint.

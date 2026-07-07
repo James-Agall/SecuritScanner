@@ -1,0 +1,27 @@
+.git
+.gitignore
+.github
+
+venv/
+aider-env/
+__pycache__/
+*.pyc
+.pytest_cache/
+htmlcov/
+.coverage
+.aider*
+
+.claude/
+CLAUDE.md
+README.md
+
+# Generated at runtime, not shipped in the image
+scanner.db
+users.db
+cert.pem
+key.pem
+report_*.html
+report_*.pdf
+
+Dockerfile
+docker-compose.yml

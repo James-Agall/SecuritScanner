@@ -21,7 +21,7 @@ class TestHTMLCrawlerLinkExtraction:
         assert "https://localhost:5000/page1" in links
         assert "https://localhost:5000/submit" in links
         assert "https://localhost:5000/frame" in links
-        assert not any("javascript:" in l or "mailto:" in l for l in links)
+        assert not any("javascript:" in link or "mailto:" in link for link in links)
 
     def test_normalize_strips_fragment_and_lowercases_host(self, enforcer):
         crawler = HTMLCrawler("https://localhost:5000/", enforcer)

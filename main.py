@@ -1,20 +1,29 @@
-from enforcer import ScopeEnforcer
-from crawler import HTMLCrawler
+from typing import Any
+
 from analyzer import SecurityHeaderAnalyzer
-from xss_scanner import XSSScanner
-from sqli_scanner import SQLiScanner
-from database import init_db, save_scan, save_vulnerability
-from reporter import generate_html_report
-from fuzzer import DirectoryFuzzer
-from csrf_scanner import CSRFScanner
-from ssl_scanner import SSLScanner
 from cmd_injection_scanner import CommandInjectionScanner
+from cookie_scanner import CookieScanner
+from cors_scanner import CORSScanner
+from crawler import HTMLCrawler
+from csrf_scanner import CSRFScanner
+from database import init_db, save_scan, save_vulnerability
+from enforcer import ScopeEnforcer
+from fuzzer import DirectoryFuzzer
 from idor_scanner import IDORScanner
+from lfi_scanner import LFIScanner
+from open_redirect_scanner import OpenRedirectScanner
+from reporter import generate_html_report
+from sqli_scanner import SQLiScanner
+from ssl_scanner import SSLScanner
+from ssrf_scanner import SSRFScanner
+from xss_scanner import XSSScanner
+from xxe_scanner import XXEScanner
+
 if __name__ == "__main__":
     init_db()
     scan_id = save_scan("https://localhost:5000")
 
-    roe_config = {
+    roe_config: dict[str, Any] = {
         "allowed_domains": ["localhost", "127.0.0.1"],
         "allowed_cidrs": [],
         "allowed_ports": [5000],
@@ -32,7 +41,7 @@ if __name__ == "__main__":
     crawler = HTMLCrawler(
         seed_url="https://localhost:5000/",
         enforcer=enforcer,
-        max_pages=10,
+        max_pages=20,
         delay=0.1
     )
 
@@ -40,6 +49,9 @@ if __name__ == "__main__":
 
     analyzer = SecurityHeaderAnalyzer()
     header_findings = analyzer.analyze(results)
+
+    cookie_scanner = CookieScanner(enforcer, roe_config["test_username"], roe_config["test_password"])
+    cookie_findings = cookie_scanner.scan(results)
 
     xss_scanner = XSSScanner(enforcer)
     xss_findings = xss_scanner.scan(results)
@@ -62,6 +74,21 @@ if __name__ == "__main__":
     idor_scanner.login(results[0]['url'])
     idor_findings = idor_scanner.scan(results)
 
+    lfi_scanner = LFIScanner(enforcer)
+    lfi_findings = lfi_scanner.scan(results)
+
+    ssrf_scanner = SSRFScanner(enforcer)
+    ssrf_findings = ssrf_scanner.scan(results)
+
+    cors_scanner = CORSScanner(enforcer)
+    cors_findings = cors_scanner.scan(results)
+
+    xxe_scanner = XXEScanner(enforcer)
+    xxe_findings = xxe_scanner.scan(results)
+
+    open_redirect_scanner = OpenRedirectScanner(enforcer)
+    open_redirect_findings = open_redirect_scanner.scan(results)
+
     print("\n" + "="*60)
     print("🚨 COMPREHENSIVE SECURITY AUDIT REPORT")
     print("="*60)
@@ -71,6 +98,17 @@ if __name__ == "__main__":
         print(f"[{i}] {vuln['severity']} | {vuln['type']}")
         print(f"    ↳ {vuln['url']}")
         save_vulnerability(scan_id, vuln)
+
+    print(f"\n--- COOKIE FINDINGS: {len(cookie_findings)} Cookie Security Issues ---")
+    if not cookie_findings:
+        print("✅ No cookie security issues found.")
+    else:
+        for i, vuln in enumerate(cookie_findings, 1):
+            print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
+            print(f"    🌐 URL: {vuln['url']}")
+            print(f"    🎯 Vulnerable Parameter: {vuln['vulnerable_param']}")
+            print(f"    🛠️ Fix: {vuln['remediation']}")
+            save_vulnerability(scan_id, vuln)
 
     print(f"\n--- ACTIVE FINDINGS: {len(xss_findings)} XSS Vulnerabilities ---")
     if not xss_findings:
@@ -152,5 +190,66 @@ if __name__ == "__main__":
             print(f"    💉 Payload that worked: {vuln['payload_used']}")
             print(f"    🛠️ Fix: {vuln['remediation']}")
             save_vulnerability(scan_id, vuln)
+
+    print(f"\n--- LFI FINDINGS: {len(lfi_findings)} Path Traversal / LFI Vulnerabilities ---")
+    if not lfi_findings:
+        print("✅ No Path Traversal / LFI found.")
+    else:
+        for i, vuln in enumerate(lfi_findings, 1):
+            print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
+            print(f"    🌐 URL: {vuln['url']}")
+            print(f"    🎯 Vulnerable Parameter: {vuln['vulnerable_param']}")
+            print(f"    💉 Payload that worked: {vuln['payload_used']}")
+            print(f"    🛠️ Fix: {vuln['remediation']}")
+            save_vulnerability(scan_id, vuln)
+
+    print(f"\n--- SSRF FINDINGS: {len(ssrf_findings)} Server-Side Request Forgery Vulnerabilities ---")
+    if not ssrf_findings:
+        print("✅ No SSRF vulnerabilities found.")
+    else:
+        for i, vuln in enumerate(ssrf_findings, 1):
+            print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
+            print(f"    🌐 URL: {vuln['url']}")
+            print(f"    🎯 Vulnerable Parameter: {vuln['vulnerable_param']}")
+            print(f"    💉 Payload that worked: {vuln['payload_used']}")
+            print(f"    🛠️ Fix: {vuln['remediation']}")
+            save_vulnerability(scan_id, vuln)
+
+    print(f"\n--- CORS FINDINGS: {len(cors_findings)} CORS Misconfigurations ---")
+    if not cors_findings:
+        print("✅ No CORS misconfigurations found.")
+    else:
+        for i, vuln in enumerate(cors_findings, 1):
+            print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
+            print(f"    🌐 URL: {vuln['url']}")
+            print(f"    🎯 Vulnerable Parameter: {vuln['vulnerable_param']}")
+            print(f"    💉 Payload that worked: {vuln['payload_used']}")
+            print(f"    🛠️ Fix: {vuln['remediation']}")
+            save_vulnerability(scan_id, vuln)
+
+    print(f"\n--- XXE FINDINGS: {len(xxe_findings)} XML External Entity Injection Vulnerabilities ---")
+    if not xxe_findings:
+        print("✅ No XXE vulnerabilities found.")
+    else:
+        for i, vuln in enumerate(xxe_findings, 1):
+            print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
+            print(f"    🌐 URL: {vuln['url']}")
+            print(f"    🎯 Vulnerable Parameter: {vuln['vulnerable_param']}")
+            print(f"    💉 Payload that worked: {vuln['payload_used']}")
+            print(f"    🛠️ Fix: {vuln['remediation']}")
+            save_vulnerability(scan_id, vuln)
+
+    print(f"\n--- OPEN REDIRECT FINDINGS: {len(open_redirect_findings)} Open Redirect Vulnerabilities ---")
+    if not open_redirect_findings:
+        print("✅ No Open Redirect vulnerabilities found.")
+    else:
+        for i, vuln in enumerate(open_redirect_findings, 1):
+            print(f"\n[{i}] {vuln['severity']} | {vuln['type']}")
+            print(f"    🌐 URL: {vuln['url']}")
+            print(f"    🎯 Vulnerable Parameter: {vuln['vulnerable_param']}")
+            print(f"    💉 Payload that worked: {vuln['payload_used']}")
+            print(f"    🛠️ Fix: {vuln['remediation']}")
+            save_vulnerability(scan_id, vuln)
+
     # Generate the final HTML report
-generate_html_report()
+    generate_html_report()

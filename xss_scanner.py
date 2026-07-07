@@ -1,6 +1,9 @@
 import urllib.parse
-from typing import List, Dict, Any
+
+from crawler import Asset
+from database import Vulnerability
 from enforcer import ScopeEnforcer, safe_http_request
+
 
 class XSSScanner:
     """
@@ -16,9 +19,9 @@ class XSSScanner:
             "'-alert(1)-'"
         ]
 
-    def scan(self, assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def scan(self, assets: list[Asset]) -> list[Vulnerability]:
         print("\n[*] Starting Reflected XSS Scanner...")
-        vulnerabilities = []
+        vulnerabilities: list[Vulnerability] = []
         
         # 1. Filter for assets that have query parameters (?key=value)
         urls_with_params = [a['url'] for a in assets if '?' in a['url']]
@@ -49,11 +52,13 @@ class XSSScanner:
 
                     # 3. Send the request through our Shield
                     is_allowed, _ = self.enforcer.check(test_url)
-                    if not is_allowed: continue
+                    if not is_allowed:
+                        continue
 
                     print(f"    ↳ Testing XSS on: {param_name} with payload: {payload[:20]}...")
                     response = safe_http_request(test_url, self.enforcer)
-                    if not response: continue
+                    if response is None:
+                        continue
 
                     # 4. Check for Reflection (Did the server spit our payload back out?)
                     # If the exact payload is in the HTML, it's a potential XSS flaw.
@@ -71,9 +76,9 @@ class XSSScanner:
 
         return self._deduplicate(vulnerabilities)
 
-    def _deduplicate(self, vulns):
-        seen = set()
-        unique = []
+    def _deduplicate(self, vulns: list[Vulnerability]) -> list[Vulnerability]:
+        seen: set[tuple[str, str]] = set()
+        unique: list[Vulnerability] = []
         for v in vulns:
             key = (v['url'], v['vulnerable_param'])
             if key not in seen:

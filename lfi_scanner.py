@@ -1,6 +1,9 @@
 import urllib.parse
-from typing import List, Dict, Any
+
+from crawler import Asset
+from database import Vulnerability
 from enforcer import ScopeEnforcer, safe_http_request
+
 
 class LFIScanner:
     """
@@ -35,9 +38,9 @@ class LFIScanner:
             ]
         )
 
-    def scan(self, assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def scan(self, assets: list[Asset]) -> list[Vulnerability]:
         print("\n[*] Starting Path Traversal / LFI Scanner...")
-        vulnerabilities = []
+        vulnerabilities: list[Vulnerability] = []
 
         urls_with_params = [a['url'] for a in assets if '?' in a['url']]
         print(f"[*] Found {len(urls_with_params)} URLs with parameters to test.")
@@ -88,9 +91,9 @@ class LFIScanner:
         print(f"[*] LFI scan complete. Found {len(vulnerabilities)} vulnerabilities.")
         return self._deduplicate(vulnerabilities)
 
-    def _deduplicate(self, vulns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        seen = set()
-        unique_vulns = []
+    def _deduplicate(self, vulns: list[Vulnerability]) -> list[Vulnerability]:
+        seen: set[tuple[str, str]] = set()
+        unique_vulns: list[Vulnerability] = []
         for v in vulns:
             key = (v['url'], v['vulnerable_param'])
             if key not in seen:

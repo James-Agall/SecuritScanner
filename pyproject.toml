@@ -20,3 +20,24 @@ exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
 ]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 120
+exclude = ["venv", "aider-env", "htmlcov", ".aider*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",   # long lines: payload/wordlist literals and f-string report rows exceed 120 often
+]
+
+[tool.mypy]
+python_version = "3.14"
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+exclude = ["venv/", "aider-env/", "tests/", "htmlcov/"]

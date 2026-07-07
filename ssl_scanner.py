@@ -1,7 +1,8 @@
-import ssl
-import socket
 import datetime
-from typing import List, Dict, Any
+import socket
+import ssl
+
+from database import Vulnerability
 from enforcer import ScopeEnforcer
 
 # Note: relies on the `cryptography` library (a dependency of `requests`/`pyOpenSSL`).
@@ -21,9 +22,9 @@ class SSLScanner:
         self.hostname = hostname
         self.port = port
 
-    def scan(self) -> List[Dict[str, Any]]:
+    def scan(self) -> list[Vulnerability]:
         print(f"\n[*] Starting SSL/TLS Analysis on {self.hostname}:{self.port}...")
-        vulnerabilities = []
+        vulnerabilities: list[Vulnerability] = []
 
         is_allowed, reason = self.enforcer.check(f"https://{self.hostname}:{self.port}/")
         if not is_allowed:
@@ -35,12 +36,14 @@ class SSLScanner:
         context.verify_mode = ssl.CERT_NONE
 
         try:
-            with socket.create_connection((self.hostname, self.port), timeout=10) as sock:
-                with context.wrap_socket(sock, server_hostname=self.hostname) as ssock:
-                    cert = ssock.getpeercert(binary_form=True)
-                    cipher = ssock.cipher()
+            with (
+                socket.create_connection((self.hostname, self.port), timeout=10) as sock,
+                context.wrap_socket(sock, server_hostname=self.hostname) as ssock,
+            ):
+                cert = ssock.getpeercert(binary_form=True)
+                cipher = ssock.cipher()
 
-            vulnerabilities.extend(self._check_cert(cert))
+            vulnerabilities.extend(self._check_cert(cert))  # type: ignore[arg-type]
             vulnerabilities.extend(self._check_cipher(cipher))
 
         except Exception as e:
@@ -49,10 +52,10 @@ class SSLScanner:
         print(f"[*] SSL/TLS analysis complete. Found {len(vulnerabilities)} findings.")
         return vulnerabilities
 
-    def _check_cert(self, der_cert: bytes) -> List[Dict[str, Any]]:
+    def _check_cert(self, der_cert: bytes) -> list[Vulnerability]:
         from cryptography import x509
 
-        findings = []
+        findings: list[Vulnerability] = []
         cert = x509.load_der_x509_certificate(der_cert)
 
         if cert.issuer == cert.subject:
@@ -71,8 +74,8 @@ class SSLScanner:
         if hasattr(cert, "not_valid_after_utc"):
             not_after = cert.not_valid_after_utc
         else:
-            not_after = cert.not_valid_after.replace(tzinfo=datetime.timezone.utc)
-        now = datetime.datetime.now(datetime.timezone.utc)
+            not_after = cert.not_valid_after.replace(tzinfo=datetime.UTC)
+        now = datetime.datetime.now(datetime.UTC)
         days_remaining = (not_after - now).days
 
         if days_remaining < 0:
@@ -98,7 +101,7 @@ class SSLScanner:
 
         return findings
 
-    def _check_cipher(self, cipher) -> List[Dict[str, Any]]:
+    def _check_cipher(self, cipher: tuple[str, str, int] | None) -> list[Vulnerability]:
         if not cipher:
             return []
 

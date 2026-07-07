@@ -6,17 +6,18 @@ real crawler and several real scanners against it -- no mocking, no
 `python local_target.py` + `python main.py` that a CI box can do safely.
 """
 import threading
+
 import pytest
 from werkzeug.serving import make_server
 
-from enforcer import ScopeEnforcer
-from crawler import HTMLCrawler
-from xss_scanner import XSSScanner
-from sqli_scanner import SQLiScanner
-from lfi_scanner import LFIScanner
-from ssrf_scanner import SSRFScanner
-from idor_scanner import IDORScanner
 from cookie_scanner import CookieScanner
+from crawler import HTMLCrawler
+from enforcer import ScopeEnforcer
+from idor_scanner import IDORScanner
+from lfi_scanner import LFIScanner
+from sqli_scanner import SQLiScanner
+from ssrf_scanner import SSRFScanner
+from xss_scanner import XSSScanner
 
 
 @pytest.fixture(scope="module")

@@ -1,7 +1,5 @@
 import random
 import time
-import itertools
-from typing import Dict, Optional
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
@@ -29,7 +27,7 @@ ACCEPT_LANGUAGES = [
 CACHE_CONTROLS = ["max-age=0", "no-cache"]
 
 
-def get_random_headers() -> Dict[str, str]:
+def get_random_headers() -> dict[str, str]:
     """Builds a plausible, randomized browser-like header set to reduce WAF fingerprinting."""
     return {
         "User-Agent": random.choice(USER_AGENTS),
@@ -44,7 +42,7 @@ def apply_stealth_delay() -> None:
     time.sleep(random.uniform(0.1, 0.8))
 
 
-def get_proxy_dict(proxy_url: Optional[str]) -> Dict[str, str]:
+def get_proxy_dict(proxy_url: str | None) -> dict[str, str]:
     """Formats a proxy URL (e.g. for routing through Burp Suite) for the requests library."""
     if not proxy_url:
         return {}

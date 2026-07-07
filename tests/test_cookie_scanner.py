@@ -104,7 +104,6 @@ class TestCookieScannerActiveLogin:
         assert "No test credentials configured" in capsys.readouterr().out
 
     def test_login_path_matching_ignores_query_and_trailing_slash(self, enforcer):
-        scanner = CookieScanner(enforcer, "admin", "admin123")
         import urllib.parse
         assert urllib.parse.urlparse("https://localhost:5000/login/").path.rstrip('/').lower().endswith('/login')
         assert urllib.parse.urlparse("https://localhost:5000/LOGIN").path.rstrip('/').lower().endswith('/login')

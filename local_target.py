@@ -1,13 +1,16 @@
-from flask import Flask, request, session, redirect, url_for
-import sqlite3
-import os
-import subprocess
 import datetime
+import os
+import sqlite3
+import subprocess
+
+import requests
 from cryptography import x509
-from cryptography.x509.oid import NameOID
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
+from cryptography.x509.oid import NameOID
+from flask import Flask, Response, jsonify, redirect, request, session, url_for
+from flask.typing import ResponseReturnValue
+from lxml import etree
 
 app = Flask(__name__)
 app.secret_key = "local-dev-only-not-a-real-secret"
@@ -18,7 +21,7 @@ USERS = {
     "user1": "user123",
 }
 
-def generate_self_signed_cert(cert_path='cert.pem', key_path='key.pem'):
+def generate_self_signed_cert(cert_path: str = 'cert.pem', key_path: str = 'key.pem') -> None:
     """Generates a self-signed cert/key pair for local HTTPS testing, if they don't already exist."""
     if os.path.exists(cert_path) and os.path.exists(key_path):
         return
@@ -31,7 +34,7 @@ def generate_self_signed_cert(cert_path='cert.pem', key_path='key.pem'):
         x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
     ])
 
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -57,7 +60,7 @@ def generate_self_signed_cert(cert_path='cert.pem', key_path='key.pem'):
             encryption_algorithm=serialization.NoEncryption(),
         ))
 
-def init_user_db():
+def init_user_db() -> None:
     db_path = 'users.db'
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -73,7 +76,7 @@ def init_user_db():
     conn.close()
 
 @app.route('/')
-def index():
+def index() -> str:
     # Added links so the crawler can discover the vulnerable pages
     return """
     <h1>Welcome to the local target</h1>
@@ -82,18 +85,86 @@ def index():
         <li><a href='/transfer'>Transfer Money</a></li>
         <li><a href='/ping'>Ping a Host</a></li>
         <li><a href='/login'>Login</a></li>
+        <li><a href="/view-doc?filename=welcome.txt">View Welcome Document</a></li>
+        <li><a href="/fetch-data?url=https://example.com">Fetch External Data</a></li>
+        <li><a href="/api/user-data">User Data API</a></li>
+        <li><a href="/redirect?next=/dashboard">Go to Dashboard</a></li>
     </ul>
+    <form method="POST" action="/parse-xml">
+        <label>Submit XML:</label><br>
+        <textarea name="xml_data" rows="4" cols="50">&lt;data&gt;Hello&lt;/data&gt;</textarea><br>
+        <button type="submit">Parse XML</button>
+    </form>
     """
 
+# Vulnerable to Open Redirect: the target URL is passed straight to
+# redirect() with no allow-list check for internal vs. external hosts.
+@app.route('/redirect')
+def open_redirect() -> ResponseReturnValue:
+    target = request.args.get('url') or request.args.get('next')
+    if not target:
+        return "Missing 'url' or 'next' parameter"
+    return redirect(target)
+
+# Vulnerable to XML External Entity (XXE) Injection: the parser resolves
+# external entities, so a DOCTYPE with a SYSTEM entity can read local files.
+@app.route('/parse-xml', methods=['POST'])
+def parse_xml() -> str:
+    try:
+        parser = etree.XMLParser(resolve_entities=True)
+        root = etree.fromstring(request.data, parser=parser)
+        return root.text or ""
+    except Exception as e:
+        return str(e)
+
+# Vulnerable to CORS Misconfiguration: reflects any Origin back with
+# credentials allowed, letting any website read this authenticated data.
+@app.route('/api/user-data')
+def api_user_data() -> Response:
+    response = jsonify({"username": "admin", "email": "admin@example.com"})
+    origin = request.headers.get('Origin')
+    if origin:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+    return response
+
+# Vulnerable to Server-Side Request Forgery: the url parameter is fetched
+# server-side with no allow-list, so it can be pointed at internal hosts.
+@app.route('/fetch-data')
+def fetch_data() -> str:
+    import urllib3
+    urllib3.disable_warnings()
+
+    target_url = request.args.get('url')
+    try:
+        response = requests.get(target_url, verify=False, timeout=10)  # type: ignore[arg-type]
+        return response.text
+    except Exception as e:
+        return str(e)
+
+# Vulnerable to Path Traversal / Local File Inclusion: the filename parameter
+# is passed straight to open() with no allow-list or path sanitization.
+@app.route('/view-doc')
+def view_doc() -> str:
+    filename = request.args.get('filename')
+    try:
+        with open(filename) as f:  # type: ignore[arg-type]
+            return f.read()
+    except Exception as e:
+        return str(e)
+
 @app.route('/login', methods=['GET', 'POST'])
-def login():
+def login() -> ResponseReturnValue:
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        if USERS.get(username) == password:
+        if USERS.get(username) == password:  # type: ignore[arg-type]
             session['logged_in'] = True
             session['username'] = username
-            return redirect(url_for('profile', user_id=1))
+            # VULNERABLE: session cookie set with no Secure/HttpOnly/SameSite protection
+            response = redirect(url_for('profile', user_id=1))
+            response.set_cookie('session_id', 'super_secret_session_token_123', httponly=False, secure=False, samesite='None')
+            return response
         return "Invalid credentials"
     return """
     <h1>Login</h1>
@@ -111,7 +182,7 @@ def login():
 # Vulnerable to IDOR: any logged-in user can view any other user's profile
 # by simply changing the user_id parameter, since there's no ownership check.
 @app.route('/profile')
-def profile():
+def profile() -> str:
     if not session.get('logged_in'):
         return "Access Denied"
 
@@ -130,12 +201,12 @@ def profile():
         return str(e)
 
 @app.route('/search')
-def search():
+def search() -> str:
     query = request.args.get('query')
     return f"<h1>Search results for: {query}</h1>"
 
 @app.route('/user')
-def user():
+def user() -> str:
     user_id = request.args.get('id')
     try:
         conn = sqlite3.connect('users.db')
@@ -155,17 +226,17 @@ def user():
 
 # Simulate an exposed .env file containing secrets
 @app.route('/.env')
-def env_file():
+def env_file() -> str:
     return "DB_PASSWORD=SuperSecret123\nAPI_KEY=sk-12345"
 
 # Simulate an exposed admin panel
 @app.route('/admin')
-def admin_panel():
+def admin_panel() -> str:
     return "<h1>Admin Dashboard</h1><p>Welcome, Administrator.</p>"
 
 # Vulnerable form without CSRF token
 @app.route('/transfer', methods=['GET', 'POST'])
-def transfer():
+def transfer() -> str:
     if request.method == 'POST':
         amount = request.form.get('amount')
         return f"<h1>Transferred ${amount}</h1>"
@@ -180,7 +251,7 @@ def transfer():
 
 # Vulnerable to OS Command Injection via unsanitized shell interpolation
 @app.route('/ping', methods=['GET', 'POST'])
-def ping():
+def ping() -> str:
     if request.method == 'POST':
         target = request.form.get('target')
         # VULNERABLE: User input passed directly to the shell

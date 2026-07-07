@@ -1,0 +1,32 @@
+# Runs the intentionally-vulnerable local_target.py and the scanner as two
+# containers that share ONE network namespace, so main.py's hardcoded
+# `https://localhost:5000` target (see CLAUDE.md - it's not a CLI flag)
+# resolves correctly without any source changes.
+#
+# Usage:
+#   docker compose up --build --abort-on-container-exit
+#   docker cp $(docker compose ps -q scanner):/app/scanner.db .   # grab results after the run
+#
+services:
+  target:
+    build: .
+    command: ["local_target.py"]
+    ports:
+      - "5000:5000"
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import ssl, urllib.request; urllib.request.urlopen('https://localhost:5000/', context=ssl._create_unverified_context(), timeout=3)"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+  scanner:
+    build: .
+    command: ["main.py"]
+    network_mode: "service:target"
+    depends_on:
+      target:
+        condition: service_healthy
+    restart: "no"

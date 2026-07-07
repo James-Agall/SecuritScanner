@@ -1,7 +1,10 @@
 import re
 import urllib.parse
+
 import requests
-from typing import List, Dict, Any, Optional
+
+from crawler import Asset
+from database import Vulnerability
 from enforcer import ScopeEnforcer
 
 DENIAL_MARKERS = ["access denied", "unauthorized"]
@@ -21,8 +24,8 @@ class IDORScanner:
         self.enforcer = enforcer
         self.username = username
         self.password = password
-        self.session_cookies: Optional[requests.cookies.RequestsCookieJar] = None
-        self.authenticated_url: Optional[str] = None
+        self.session_cookies: requests.cookies.RequestsCookieJar | None = None
+        self.authenticated_url: str | None = None
 
     def login(self, base_url: str) -> bool:
         parsed_base = urllib.parse.urlparse(base_url)
@@ -58,9 +61,9 @@ class IDORScanner:
         print("    ↳ [+] Login successful, session cookie captured.")
         return True
 
-    def scan(self, assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def scan(self, assets: list[Asset]) -> list[Vulnerability]:
         print("\n[*] Starting IDOR Scanner...")
-        vulnerabilities = []
+        vulnerabilities: list[Vulnerability] = []
 
         if self.session_cookies is None:
             print("    ↳ [!] Not logged in, skipping IDOR scan.")
@@ -122,9 +125,9 @@ class IDORScanner:
         print(f"[*] IDOR scan complete. Found {len(vulnerabilities)} vulnerabilities.")
         return self._deduplicate(vulnerabilities)
 
-    def _deduplicate(self, vulns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        seen = set()
-        unique_vulns = []
+    def _deduplicate(self, vulns: list[Vulnerability]) -> list[Vulnerability]:
+        seen: set[tuple[str, str]] = set()
+        unique_vulns: list[Vulnerability] = []
         for v in vulns:
             key = (v['url'], v['vulnerable_param'])
             if key not in seen:

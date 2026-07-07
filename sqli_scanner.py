@@ -1,13 +1,15 @@
-from typing import List, Dict, Any
+from crawler import Asset
+from database import Vulnerability
 from enforcer import ScopeEnforcer, safe_http_request
+
 
 class SQLiScanner:
     def __init__(self, enforcer: ScopeEnforcer):
         self.enforcer = enforcer
 
-    def scan(self, assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def scan(self, assets: list[Asset]) -> list[Vulnerability]:
         print("\n[*] Starting Error-Based SQL Injection Scanner...")
-        vulns = []
+        vulns: list[Vulnerability] = []
         
         # Filter for assets that have query parameters
         urls_with_params = [a for a in assets if '?' in a['url']]
@@ -32,11 +34,11 @@ class SQLiScanner:
                     print(f"    ↳ Testing SQLi on: {key} with payload: {payload}")
                     response = safe_http_request(full_url, self.enforcer)
                     
-                    if response:
+                    if response is not None:
                         # Check for database error keywords
                         error_keywords = ['sqlite', 'operationalerror', 'unrecognized token', 'syntax', 'sql', 'unclosed quotation mark', 'mysql', 'ora-']
                         if any(keyword.lower() in response.text.lower() for keyword in error_keywords):
-                            vuln = {
+                            vuln: Vulnerability = {
                                 'type': "Error-Based SQL Injection",
                                 'severity': "CRITICAL",
                                 'url': url,
@@ -48,9 +50,9 @@ class SQLiScanner:
                             vulns.append(vuln)
         return self._deduplicate(vulns)
 
-    def _deduplicate(self, vulns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        seen = set()
-        unique_vulns = []
+    def _deduplicate(self, vulns: list[Vulnerability]) -> list[Vulnerability]:
+        seen: set[tuple[str, str]] = set()
+        unique_vulns: list[Vulnerability] = []
         for vuln in vulns:
             key = (vuln['url'], vuln['vulnerable_param'])
             if key not in seen:
