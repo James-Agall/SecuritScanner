@@ -1,19 +1,35 @@
-# Runs the intentionally-vulnerable local_target.py and the scanner as two
-# containers that share ONE network namespace, so main.py's hardcoded
-# `https://localhost:5000` target (see CLAUDE.md - it's not a CLI flag)
-# resolves correctly without any source changes.
+# Three services from one image (Dockerfile has no fixed ENTRYPOINT, so each
+# service just supplies its own full `command:`):
+#   target  - local_target.py, the intentionally vulnerable Flask app
+#   scanner - the CLI (main.py), one-shot: crawls + scans + exits
+#   api     - the FastAPI backend (api/app.py), long-running, port 8000
+#
+# `scanner` shares target's network namespace (network_mode: service:target),
+# matching main.py's hardcoded `https://localhost:5000` - see CLAUDE.md. `api`
+# is NOT wired to target that way, since it accepts any target_url per request
+# instead of a hardcoded one; it reaches target over the default compose
+# network via Docker DNS as `https://target:5000`. Because that hostname
+# resolves to a private Docker-internal IP, any POST /scans body aimed at it
+# must set "allow_local_testing": true (ScopeEnforcer blocks private/loopback
+# IPs otherwise - see enforcer.py).
 #
 # Usage:
-#   docker compose up --build --abort-on-container-exit
-#   docker cp $(docker compose ps -q scanner):/app/scanner.db .   # grab results after the run
+#   docker compose up --build                        # starts target + api; scanner runs once and exits
+#   docker cp $(docker compose ps -q scanner):/app/scanner.db .   # grab CLI results after the run
+#
+#   curl -X POST http://localhost:8000/scans \
+#     -H "Content-Type: application/json" \
+#     -d '{"target_url": "https://target:5000/", "allow_local_testing": true, "test_username": "admin", "test_password": "admin123"}'
 #
 services:
   target:
     build: .
-    command: ["local_target.py"]
+    command: ["python", "local_target.py"]
     ports:
       - "5000:5000"
     restart: "no"
+    volumes:
+      - target_data:/app
     healthcheck:
       test: ["CMD", "python", "-c",
              "import ssl, urllib.request; urllib.request.urlopen('https://localhost:5000/', context=ssl._create_unverified_context(), timeout=3)"]
@@ -24,9 +40,47 @@ services:
 
   scanner:
     build: .
-    command: ["main.py"]
+    command: ["python", "main.py"]
     network_mode: "service:target"
     depends_on:
       target:
         condition: service_healthy
     restart: "no"
+    volumes:
+      - scanner_data:/app
+
+  api:
+    build: .
+    command: ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    environment:
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+    depends_on:
+      target:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - scanner_data:/app
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  # Shared by scanner and api so both see the same scanner.db/reports. A named
+  # volume mounted over /app is auto-seeded from the image's /app on first
+  # creation (Docker's documented behavior for volumes, not bind mounts), so
+  # the app code is still there - but that also means a later `docker compose
+  # build` won't update the code inside an already-existing volume. Run
+  # `docker compose down -v` before rebuilding if you've changed source.
+  scanner_data:
+  # target has no persistence needs of its own (cert.pem/key.pem/users.db are
+  # regenerated fresh each run), but it still needs a writable /app: the
+  # container's root filesystem is otherwise whatever the image shipped, and
+  # this volume (auto-seeded from the image, same as scanner_data above)
+  # guarantees a writable mount point regardless of image layer ownership.
+  target_data:

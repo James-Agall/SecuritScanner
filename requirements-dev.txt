@@ -6,3 +6,4 @@ responses
 ruff
 mypy
 types-requests
+httpx

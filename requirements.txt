@@ -4,3 +4,5 @@ beautifulsoup4
 cryptography
 lxml
 pdfkit
+fastapi
+uvicorn[standard]

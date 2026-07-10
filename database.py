@@ -13,6 +13,19 @@ class Vulnerability(TypedDict):
     payload_used: NotRequired[str]
 
 
+class VulnerabilityRecord(Vulnerability):
+    id: int
+    scan_id: int
+
+
+class ScanRecord(TypedDict):
+    id: int
+    target_url: str
+    start_time: str
+    status: str
+    vulnerability_count: int
+
+
 def init_db() -> None:
     conn = sqlite3.connect('scanner.db')
     c = conn.cursor()
@@ -28,15 +41,23 @@ def init_db() -> None:
     conn.commit()
     conn.close()
 
-def save_scan(target_url: str) -> int | None:
+def save_scan(target_url: str, status: str = 'Completed') -> int | None:
     conn = sqlite3.connect('scanner.db')
     c = conn.cursor()
     c.execute('INSERT INTO scans (target_url, start_time, status) VALUES (?, ?, ?)',
-              (target_url, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'Completed'))
+              (target_url, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), status))
     scan_id = c.lastrowid
     conn.commit()
     conn.close()
     return scan_id
+
+
+def update_scan_status(scan_id: int, status: str) -> None:
+    conn = sqlite3.connect('scanner.db')
+    c = conn.cursor()
+    c.execute('UPDATE scans SET status = ? WHERE id = ?', (status, scan_id))
+    conn.commit()
+    conn.close()
 
 def save_vulnerability(scan_id: int | None, vuln_dict: Vulnerability) -> None:
     conn = sqlite3.connect('scanner.db')
@@ -49,3 +70,81 @@ def save_vulnerability(scan_id: int | None, vuln_dict: Vulnerability) -> None:
            vuln_dict.get('description', ''), vuln_dict.get('remediation', '')))
     conn.commit()
     conn.close()
+
+
+def _row_to_scan_record(row: tuple[int, str, str, str, int]) -> ScanRecord:
+    scan_id, target_url, start_time, status, vuln_count = row
+    return {
+        "id": scan_id,
+        "target_url": target_url,
+        "start_time": start_time,
+        "status": status,
+        "vulnerability_count": vuln_count,
+    }
+
+
+def get_scan(scan_id: int) -> ScanRecord | None:
+    conn = sqlite3.connect('scanner.db')
+    c = conn.cursor()
+    c.execute('''
+        SELECT s.id, s.target_url, s.start_time, s.status, COUNT(v.id)
+        FROM scans s
+        LEFT JOIN vulnerabilities v ON v.scan_id = s.id
+        WHERE s.id = ?
+        GROUP BY s.id
+    ''', (scan_id,))
+    row = c.fetchone()
+    conn.close()
+    return _row_to_scan_record(row) if row else None
+
+
+def get_all_scans() -> list[ScanRecord]:
+    conn = sqlite3.connect('scanner.db')
+    c = conn.cursor()
+    c.execute('''
+        SELECT s.id, s.target_url, s.start_time, s.status, COUNT(v.id)
+        FROM scans s
+        LEFT JOIN vulnerabilities v ON v.scan_id = s.id
+        GROUP BY s.id
+        ORDER BY s.id DESC
+    ''')
+    rows = c.fetchall()
+    conn.close()
+    return [_row_to_scan_record(row) for row in rows]
+
+
+def get_vulnerabilities_for_scan(scan_id: int) -> list[VulnerabilityRecord]:
+    conn = sqlite3.connect('scanner.db')
+    c = conn.cursor()
+    c.execute('''
+        SELECT id, scan_id, vuln_type, severity, url, parameter, payload, description, remediation
+        FROM vulnerabilities WHERE scan_id = ?
+        ORDER BY id
+    ''', (scan_id,))
+    rows = c.fetchall()
+    conn.close()
+    return [
+        {
+            "id": vuln_id,
+            "scan_id": vuln_scan_id,
+            "type": vuln_type,
+            "severity": severity,
+            "url": url,
+            "vulnerable_param": parameter,
+            "payload_used": payload,
+            "description": description,
+            "remediation": remediation,
+        }
+        for vuln_id, vuln_scan_id, vuln_type, severity, url, parameter, payload, description, remediation in rows
+    ]
+
+
+def delete_scan(scan_id: int) -> bool:
+    conn = sqlite3.connect('scanner.db')
+    c = conn.cursor()
+    c.execute('DELETE FROM vulnerabilities WHERE scan_id = ?', (scan_id,))
+    c.execute('DELETE FROM scans WHERE id = ?', (scan_id,))
+    deleted = c.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted

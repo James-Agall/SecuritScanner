@@ -110,3 +110,39 @@ class TestGenerateHtmlReport:
 
         assert any(url.endswith(".pdf") for url in opened_urls)
         assert any(url.endswith(".html") for url in opened_urls)
+
+    def test_returns_html_filepath(self, isolated_scan_db, monkeypatch):
+        monkeypatch.setattr(reporter, "generate_pdf_report", lambda html, pdf: None)
+        scan_id = database.save_scan("https://localhost:5000")
+
+        result = reporter.generate_html_report()
+
+        assert result == str(isolated_scan_db / f"report_{scan_id}.html")
+
+    def test_returns_none_when_no_scans(self, isolated_scan_db):
+        assert reporter.generate_html_report() is None
+
+    def test_explicit_scan_id_targets_older_scan(self, isolated_scan_db, monkeypatch):
+        monkeypatch.setattr(reporter, "generate_pdf_report", lambda html, pdf: None)
+        older_id = database.save_scan("https://old-target.com")
+        database.save_scan("https://newest-target.com")
+
+        result = reporter.generate_html_report(scan_id=older_id)
+
+        assert result == str(isolated_scan_db / f"report_{older_id}.html")
+        content = (isolated_scan_db / f"report_{older_id}.html").read_text(encoding="utf-8")
+        assert "old-target.com" in content
+
+    def test_unknown_scan_id_returns_none(self, isolated_scan_db):
+        database.save_scan("https://localhost:5000")
+        assert reporter.generate_html_report(scan_id=9999) is None
+
+    def test_open_browser_false_suppresses_browser_open(self, isolated_scan_db, monkeypatch):
+        opened_urls = []
+        monkeypatch.setattr(reporter.webbrowser, "open", lambda url: opened_urls.append(url))
+        monkeypatch.setattr(reporter, "generate_pdf_report", lambda html, pdf: None)
+        database.save_scan("https://localhost:5000")
+
+        reporter.generate_html_report(open_browser=False)
+
+        assert opened_urls == []

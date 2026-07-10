@@ -26,21 +26,24 @@ def generate_pdf_report(html_filepath: str, pdf_filepath: str) -> None:
     except OSError:
         print("[!] PDF generation failed. Please ensure 'wkhtmltopdf' is installed and added to your system PATH. Download it from https://wkhtmltopdf.org/")
 
-def generate_html_report(db_path: str = 'scanner.db') -> None:
+def generate_html_report(scan_id: int | None = None, db_path: str = 'scanner.db', open_browser: bool = True) -> str | None:
     print("\n[*] Generating HTML Report...")
-    
-    # 1. Connect to the database and fetch the latest scan
+
+    # 1. Connect to the database and fetch the target scan (or the most recent one)
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
-    
-    # Get the most recent scan
-    c.execute("SELECT id, target_url, start_time, status FROM scans ORDER BY id DESC LIMIT 1")
+
+    if scan_id is None:
+        c.execute("SELECT id, target_url, start_time, status FROM scans ORDER BY id DESC LIMIT 1")
+    else:
+        c.execute("SELECT id, target_url, start_time, status FROM scans WHERE id = ?", (scan_id,))
     scan = c.fetchone()
-    
+
     if not scan:
         print("[!] No scans found in the database.")
-        return
-        
+        conn.close()
+        return None
+
     scan_id, target_url, start_time, status = scan
     
     # Get all vulnerabilities for this scan
@@ -165,7 +168,11 @@ def generate_html_report(db_path: str = 'scanner.db') -> None:
     generate_pdf_report(html_filepath, pdf_filepath)
     if os.path.exists(pdf_filepath):
         print(f"[*] PDF Report saved to {pdf_filepath}")
-        webbrowser.open(f"file://{os.path.abspath(pdf_filepath)}")
+        if open_browser:
+            webbrowser.open(f"file://{os.path.abspath(pdf_filepath)}")
 
-    print("[*] Opening report in default web browser...")
-    webbrowser.open(f"file://{html_filepath}")
+    if open_browser:
+        print("[*] Opening report in default web browser...")
+        webbrowser.open(f"file://{html_filepath}")
+
+    return html_filepath

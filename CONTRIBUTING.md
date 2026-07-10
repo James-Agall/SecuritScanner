@@ -41,6 +41,20 @@ python main.py
 `roe_config` (allowed domains/ports, credentials, stealth mode) are set
 directly at the bottom of the file, not passed as arguments.
 
+## Running the API
+
+The same pipeline is also exposed as a REST API (`api/app.py`), for a future
+web frontend:
+
+```bash
+uvicorn api.app:app --reload
+```
+
+Then `POST http://localhost:8000/scans` with `{"target_url": "https://localhost:5000/", "allow_local_testing": true}`
+against a running `local_target.py`, and poll `GET /scans/{id}` until
+`status` reaches `completed`. Interactive OpenAPI docs are at
+`http://localhost:8000/docs`.
+
 ## Running tests, type checks, and lint
 
 ```bash
@@ -84,10 +98,13 @@ alongside a `docker build` that re-runs the test suite as a build step.
    `self.enforcer.check(url)` (or just let `safe_http_request` do it) before
    touching the network, so scans stay inside the configured
    domains/CIDRs/ports.
-3. **Wire it into `main.py`**: import the class, instantiate it with the
-   shared `enforcer`, call `.scan(results)`, and add a findings block that
-   prints results and calls `save_vulnerability(scan_id, vuln)` per finding,
-   following the pattern of the existing scanner blocks.
+3. **Wire it into `scan_runner.run_scan_pipeline()`**: import the class,
+   instantiate it with the shared `enforcer`, call `.scan(results)`, and add
+   a findings block that prints results and calls
+   `save_vulnerability(scan_id, vuln)` per finding, following the pattern of
+   the existing scanner blocks. This one function is shared by both the CLI
+   (`main.py`) and the web API (`api/routers/scans.py`), so wiring it in
+   here — not in `main.py` — makes it available from both.
 4. **Write tests** in `tests/test_your_scanner.py` — mock `safe_http_request`
    or use `responses`/`monkeypatch` against a real or fake asset list, cover
    both the "vulnerability found" and "clean" paths, and confirm

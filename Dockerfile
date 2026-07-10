@@ -8,12 +8,19 @@ WORKDIR /build
 # the rest are build headers for cryptography/lxml in case no prebuilt wheel
 # exists yet for this Python version.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        wkhtmltopdf \
+        wget \
         gcc \
         libxml2-dev \
         libxslt1-dev \
         libssl-dev \
         libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install wkhtmltopdf from GitHub releases (removed from Debian Trixie repos)
+RUN wget -q https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox_0.12.6.1-3.bookworm_amd64.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ./wkhtmltox_0.12.6.1-3.bookworm_amd64.deb \
+    && rm wkhtmltox_0.12.6.1-3.bookworm_amd64.deb \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements-dev.txt ./
@@ -31,9 +38,15 @@ RUN python -m pytest
 FROM python:3.14-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        wkhtmltopdf \
+        wget \
+    && wget -q https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox_0.12.6.1-3.bookworm_amd64.deb \
+    && apt-get install -y --no-install-recommends ./wkhtmltox_0.12.6.1-3.bookworm_amd64.deb \
+    && apt-get purge -y wget \
+    && apt-get autoremove -y \
+    && rm wkhtmltox_0.12.6.1-3.bookworm_amd64.deb \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --create-home --uid 1000 scanner
+    && useradd --create-home --uid 1000 scanner \
+    && mkdir -p /app && chown scanner:scanner /app
 
 # Pulls in only what `pip install -r requirements.txt` put under /usr/local
 # in the builder stage - no gcc, no dev headers, no pytest/ruff/mypy.
@@ -45,9 +58,22 @@ COPY --chown=scanner:scanner . .
 USER scanner
 
 # cert.pem/key.pem/scanner.db/users.db are generated on first run into /app,
-# which is owned by the scanner user, so no volume is required for a quick trial.
+# which is owned by the scanner user, so no volume is required for a quick trial
+# (docker-compose.yml does mount one anyway, so the API's data survives restarts).
+EXPOSE 8000
+
+# Generic sanity check (module imports) rather than service-specific, since this
+# same image runs the CLI, the vulnerable target, and the API - docker-compose.yml
+# overrides this per-service with a check that matches what's actually listening.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import enforcer, crawler, database" || exit 1
 
-ENTRYPOINT ["python"]
-CMD ["main.py"]
+# No fixed ENTRYPOINT: CMD is the whole command, so it's freely replaceable.
+# Default: run the CLI.
+CMD ["python", "main.py"]
+
+# To run the API instead, override the command with a full one, e.g.:
+#   docker run --rm -p 8000:8000 <image> uvicorn api.app:app --host 0.0.0.0 --port 8000
+# or the vulnerable target:
+#   docker run --rm -p 5000:5000 <image> python local_target.py
+# (docker-compose.yml wires up all three as separate services.)

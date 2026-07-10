@@ -5,4 +5,6 @@ __pycache__/
 # Generated certificates and reports
 *.pem
 *.html
+*.pdf
 *.db
+.coverage
