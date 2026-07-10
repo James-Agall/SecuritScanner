@@ -25,3 +25,6 @@ report_*.pdf
 
 Dockerfile
 docker-compose.yml
+
+# React frontend (Phase 4) is not part of the Python backend image
+frontend/

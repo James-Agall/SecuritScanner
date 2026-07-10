@@ -25,10 +25,11 @@ python main.py             # crawls + scans localhost:5000, writes to scanner.db
 (`roe_config`) are hardcoded at the bottom of the file. It builds `roe_config`, then delegates the actual
 crawl+scan+persist+report work to `scan_runner.run_scan_pipeline()` (see below).
 
-There is also a REST API exposing the same pipeline over HTTP, for a future web frontend:
+There is also a REST API exposing the same pipeline over HTTP, and a React frontend that talks to it:
 
 ```bash
 uvicorn api.app:app --reload    # http://localhost:8000/docs for interactive OpenAPI docs
+cd frontend && npm run dev      # http://localhost:5173, expects the API at http://localhost:8000
 ```
 
 `POST /scans` kicks off `run_scan_pipeline()` as a FastAPI `BackgroundTasks` job and returns immediately
@@ -83,7 +84,13 @@ function, so there is exactly one implementation of "run a full scan":
    `status=pending`; `GET /scans`, `GET /scans/{id}`, `DELETE /scans/{id}`, `GET /scans/{id}/vulnerabilities`,
    and `GET /scans/{id}/report?format=html|pdf` cover the rest of the read/delete/report surface. Routes live
    in `api/routers/scans.py`, request/response shapes in `api/schemas.py`. CORS is open for local dev origins
-   (`CORS_ORIGINS` env var) in anticipation of a React frontend in a later phase.
+   (`CORS_ORIGINS` env var), which the `frontend/` dev server (`http://localhost:5173`) relies on.
+9. **`frontend/`** — a Vite + React + TypeScript + Tailwind dashboard, entirely separate from the Python
+   package (own `package.json`, not part of the Docker backend image — see `.dockerignore`). `src/api.ts` is
+   the single Axios client plus the `Scan`/`Vulnerability` types mirroring `api/schemas.py`; `src/pages/`
+   holds the two routed views (`Dashboard` = scan list + new-scan form, `ScanDetail` = one scan's status,
+   report links, and findings), both polling their `GET` endpoint every 3s while a scan is `pending`/`running`.
+   No state management library — plain `useState`/`useEffect` per page, since there are only two.
 
 ### Conventions to preserve when extending
 
