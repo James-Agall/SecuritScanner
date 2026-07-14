@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getScan, getVulnerabilities, reportUrl, type Scan, type Vulnerability } from '../api';
+import { phaseLabel } from '../phaseLabels';
 import StatusBadge from '../components/StatusBadge';
 import VulnerabilityCard from '../components/VulnerabilityCard';
 
@@ -19,7 +20,7 @@ export default function ScanDetail() {
     try {
       const scanData = await getScan(scanId);
       setScan(scanData);
-      if (scanData.status === 'completed') {
+      if (scanData.status === 'completed' || scanData.status === 'running') {
         setVulns(await getVulnerabilities(scanId));
       }
     } catch {
@@ -93,18 +94,26 @@ export default function ScanDetail() {
           This scan failed. Check the API logs for details.
         </p>
       ) : (
-        <p className="text-sm text-slate-500">Scan in progress — this page updates automatically…</p>
+        <div className="flex items-center gap-2 text-sm text-slate-500">
+          <span className="size-2 animate-pulse rounded-full bg-blue-500" aria-hidden="true" />
+          {phaseLabel(scan.current_phase)}
+          {vulns.length > 0 && (
+            <span>
+              — {vulns.length} finding{vulns.length === 1 ? '' : 's'} so far
+            </span>
+          )}
+        </div>
       )}
 
-      {isCompleted && (
+      {(isCompleted || scan.status === 'running') && (
         <div className="flex flex-col gap-3">
-          {sortedVulns.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">
-              No vulnerabilities found. 🎉
-            </p>
-          ) : (
-            sortedVulns.map((vuln) => <VulnerabilityCard key={vuln.id} vuln={vuln} />)
-          )}
+          {sortedVulns.length === 0
+            ? isCompleted && (
+                <p className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">
+                  No vulnerabilities found. 🎉
+                </p>
+              )
+            : sortedVulns.map((vuln) => <VulnerabilityCard key={vuln.id} vuln={vuln} />)}
         </div>
       )}
     </div>

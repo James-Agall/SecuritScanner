@@ -96,11 +96,11 @@ def download_report(scan_id: int, format: str = Query(default="html", pattern="^
 
     html_filename = f"report_{scan_id}.html"
     if os.path.exists(html_filename):
-        html_path = os.path.abspath(html_filename)
+        html_path: str | None = os.path.abspath(html_filename)
     else:
         html_path = generate_html_report(scan_id=scan_id, open_browser=False)
-        if html_path is None:
-            raise HTTPException(status_code=404, detail=f"Scan {scan_id} not found.")
+    if html_path is None:
+        raise HTTPException(status_code=404, detail=f"Scan {scan_id} not found.")
 
     if format == "html":
         return FileResponse(html_path, media_type="text/html", filename=os.path.basename(html_path))

@@ -28,6 +28,7 @@ class ScanResponse(BaseModel):
     target_url: str
     start_time: str
     status: str
+    current_phase: str | None = None
     vulnerability_count: int
 
 

@@ -26,6 +26,25 @@ class TestInitDb:
         # Calling init_db() twice must not raise (CREATE TABLE IF NOT EXISTS)
         database.init_db()
 
+    def test_upgrades_pre_existing_db_missing_current_phase_column(self, tmp_path, monkeypatch):
+        # Simulates a scanner.db created before the current_phase column existed.
+        monkeypatch.chdir(tmp_path)
+        conn = sqlite3.connect(tmp_path / "scanner.db")
+        conn.execute('''
+            CREATE TABLE scans
+            (id INTEGER PRIMARY KEY AUTOINCREMENT, target_url TEXT, start_time TEXT, status TEXT)
+        ''')
+        conn.commit()
+        conn.close()
+
+        database.init_db()  # must not raise, and must add the missing column
+
+        scan_id = database.save_scan("https://localhost:5000", status="running")
+        database.update_scan_phase(scan_id, "xss_scan")
+        record = database.get_scan(scan_id)
+        assert record is not None
+        assert record["current_phase"] == "xss_scan"
+
 
 class TestSaveScan:
     def test_returns_incrementing_id(self, isolated_db):
@@ -96,6 +115,33 @@ class TestUpdateScanStatus:
         assert row == ("running",)
 
 
+class TestUpdateScanPhase:
+    def test_updates_phase(self, isolated_db):
+        scan_id = database.save_scan("https://localhost:5000", status="running")
+        database.update_scan_phase(scan_id, "xss_scan")
+
+        conn = sqlite3.connect(isolated_db)
+        c = conn.cursor()
+        c.execute("SELECT current_phase FROM scans WHERE id = ?", (scan_id,))
+        row = c.fetchone()
+        conn.close()
+        assert row == ("xss_scan",)
+
+    def test_round_trips_through_get_scan(self, isolated_db):
+        scan_id = database.save_scan("https://localhost:5000", status="running")
+        database.update_scan_phase(scan_id, "crawling")
+
+        record = database.get_scan(scan_id)
+        assert record is not None
+        assert record["current_phase"] == "crawling"
+
+    def test_defaults_to_none_before_any_phase_update(self, isolated_db):
+        scan_id = database.save_scan("https://localhost:5000", status="pending")
+        record = database.get_scan(scan_id)
+        assert record is not None
+        assert record["current_phase"] is None
+
+
 class TestGetScan:
     def test_returns_none_for_unknown_id(self, isolated_db):
         assert database.get_scan(9999) is None
@@ -117,6 +163,7 @@ class TestGetScan:
             "target_url": "https://localhost:5000",
             "start_time": record["start_time"],
             "status": "Completed",
+            "current_phase": None,
             "vulnerability_count": 2,
         }
 

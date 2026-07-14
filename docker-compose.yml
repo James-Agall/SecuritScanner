@@ -1,8 +1,10 @@
-# Three services from one image (Dockerfile has no fixed ENTRYPOINT, so each
-# service just supplies its own full `command:`):
-#   target  - local_target.py, the intentionally vulnerable Flask app
-#   scanner - the CLI (main.py), one-shot: crawls + scans + exits
-#   api     - the FastAPI backend (api/app.py), long-running, port 8000
+# Four services (the first three from one Python image with no fixed
+# ENTRYPOINT, so each just supplies its own full `command:`; frontend is a
+# separate Node image built from frontend/Dockerfile):
+#   target   - local_target.py, the intentionally vulnerable Flask app
+#   scanner  - the CLI (main.py), one-shot: crawls + scans + exits
+#   api      - the FastAPI backend (api/app.py), long-running, port 8000
+#   frontend - the Vite dev server (frontend/), long-running, port 5173
 #
 # `scanner` shares target's network namespace (network_mode: service:target),
 # matching main.py's hardcoded `https://localhost:5000` - see CLAUDE.md. `api`
@@ -11,10 +13,13 @@
 # network via Docker DNS as `https://target:5000`. Because that hostname
 # resolves to a private Docker-internal IP, any POST /scans body aimed at it
 # must set "allow_local_testing": true (ScopeEnforcer blocks private/loopback
-# IPs otherwise - see enforcer.py).
+# IPs otherwise - see enforcer.py). `frontend` talks to `api` from the host
+# browser (not container-to-container), via `api`'s published port 8000 -
+# see frontend/src/api.ts.
 #
 # Usage:
-#   docker compose up --build                        # starts target + api; scanner runs once and exits
+#   docker compose up --build   # one command: starts target, api, frontend; scanner runs once and exits
+#   open http://localhost:5173  # the dashboard
 #   docker cp $(docker compose ps -q scanner):/app/scanner.db .   # grab CLI results after the run
 #
 #   curl -X POST http://localhost:8000/scans \
@@ -69,6 +74,25 @@ services:
       timeout: 3s
       retries: 10
       start_period: 5s
+
+  frontend:
+    build: ./frontend
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    ports:
+      - "5173:5173"
+    environment:
+      # This repo lives on a Windows drive under WSL2/Docker Desktop, where
+      # inotify events from a bind mount don't reliably cross the
+      # Windows -> WSL2 -> container boundary. Polling trades a bit of CPU
+      # for hot-reload actually working.
+      - CHOKIDAR_USEPOLLING=true
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
 
 volumes:
   # Shared by scanner and api so both see the same scanner.db/reports. A named

@@ -93,6 +93,35 @@ class TestRunScanPipeline:
         assert record is not None
         assert record["status"] == "completed"
 
+    def test_phase_transitions_happen_in_order(self, live_server, roe_config, monkeypatch):
+        phases: list[str] = []
+        monkeypatch.setattr(
+            scan_runner, "update_scan_phase", lambda scan_id, phase: phases.append(phase)
+        )
+
+        scan_id = database.save_scan(live_server, status="pending")
+        assert scan_id is not None
+
+        run_scan_pipeline(scan_id, f"{live_server}/", roe_config, max_pages=20, delay=0, generate_report=False)
+
+        assert phases == [
+            "crawling",
+            "header_analysis",
+            "cookie_scan",
+            "xss_scan",
+            "sqli_scan",
+            "directory_fuzzing",
+            "csrf_scan",
+            "ssl_scan",
+            "command_injection_scan",
+            "idor_scan",
+            "lfi_scan",
+            "ssrf_scan",
+            "cors_scan",
+            "xxe_scan",
+            "open_redirect_scan",
+        ]
+
     def test_pipeline_marks_scan_failed_on_exception(self, live_server, roe_config, monkeypatch):
         def boom(self, assets):
             raise RuntimeError("scanner exploded")

@@ -51,8 +51,10 @@ class HTMLCrawler:
 
             if normalized_url in self.visited:
                 continue
-            is_allowed, _ = self.enforcer.check(normalized_url)
+            is_allowed, reason = self.enforcer.check(normalized_url)
             if not is_allowed:
+                if normalized_url == self._normalize_url(self.seed_url):
+                    print(f"[!] Seed URL blocked by scope enforcer: {normalized_url} — {reason}")
                 continue
 
             self.visited.add(normalized_url)

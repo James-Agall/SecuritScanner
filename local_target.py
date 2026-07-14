@@ -269,4 +269,4 @@ def ping() -> str:
 if __name__ == '__main__':
     init_user_db()
     generate_self_signed_cert()
-    app.run(port=5000, ssl_context=('cert.pem', 'key.pem'))
+    app.run(host='0.0.0.0', port=5000, ssl_context=('cert.pem', 'key.pem'))

@@ -84,9 +84,9 @@ class ScopeEnforcer:
                     return True, "IP in allowed CIDR."
             return False, f"DENIED: IP {ip_str} outside allowed CIDRs."
         
-        if self.allow_local_testing and (hostname == "localhost" or hostname == "127.0.0.1"):
-            return True, f"IP {ip_str} is allowed for local testing."
-        elif ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
+        if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
+            if self.allow_local_testing:
+                return True, f"IP {ip_str} is allowed for local testing."
             return False, f"DENIED: IP {ip_str} is internal/private (SSRF Protection)."
         return True, f"IP {ip_str} is public."
 

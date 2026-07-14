@@ -6,6 +6,8 @@ export default function NewScanForm({ onScanCreated }: { onScanCreated: () => vo
   const [maxPages, setMaxPages] = useState(20);
   const [allowLocalTesting, setAllowLocalTesting] = useState(false);
   const [stealthMode, setStealthMode] = useState(true);
+  const [testUsername, setTestUsername] = useState('');
+  const [testPassword, setTestPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,9 +21,13 @@ export default function NewScanForm({ onScanCreated }: { onScanCreated: () => vo
         max_pages: maxPages,
         allow_local_testing: allowLocalTesting,
         stealth_mode: stealthMode,
+        ...(testUsername ? { test_username: testUsername } : {}),
+        ...(testPassword ? { test_password: testPassword } : {}),
       };
       await createScan(request);
       setTargetUrl('');
+      setTestUsername('');
+      setTestPassword('');
       onScanCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start scan.');
@@ -79,6 +85,34 @@ export default function NewScanForm({ onScanCreated }: { onScanCreated: () => vo
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={stealthMode} onChange={(e) => setStealthMode(e.target.checked)} />
           Stealth mode
+        </label>
+      </div>
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+        <label className="flex-1">
+          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+            Test username <span className="text-slate-400">(optional, enables IDOR/cookie auth checks)</span>
+          </span>
+          <input
+            type="text"
+            autoComplete="off"
+            placeholder="admin"
+            value={testUsername}
+            onChange={(e) => setTestUsername(e.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 dark:border-slate-700 dark:bg-slate-950"
+          />
+        </label>
+        <label className="flex-1">
+          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+            Test password <span className="text-slate-400">(optional)</span>
+          </span>
+          <input
+            type="password"
+            autoComplete="off"
+            placeholder="••••••••"
+            value={testPassword}
+            onChange={(e) => setTestPassword(e.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 dark:border-slate-700 dark:bg-slate-950"
+          />
         </label>
       </div>
       {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}

@@ -23,6 +23,7 @@ class ScanRecord(TypedDict):
     target_url: str
     start_time: str
     status: str
+    current_phase: str | None
     vulnerability_count: int
 
 
@@ -32,12 +33,18 @@ def init_db() -> None:
     # Fixed the syntax error here!
     c.execute('''
         CREATE TABLE IF NOT EXISTS scans
-        (id INTEGER PRIMARY KEY AUTOINCREMENT, target_url TEXT, start_time TEXT, status TEXT)
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, target_url TEXT, start_time TEXT, status TEXT, current_phase TEXT)
     ''')
     c.execute('''
         CREATE TABLE IF NOT EXISTS vulnerabilities
         (id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id INTEGER, vuln_type TEXT, severity TEXT, url TEXT, parameter TEXT, payload TEXT, description TEXT, remediation TEXT)
     ''')
+    # Upgrade path for pre-existing scanner.db files created before this column existed.
+    try:
+        c.execute("ALTER TABLE scans ADD COLUMN current_phase TEXT")
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e):
+            raise
     conn.commit()
     conn.close()
 
@@ -59,6 +66,14 @@ def update_scan_status(scan_id: int, status: str) -> None:
     conn.commit()
     conn.close()
 
+
+def update_scan_phase(scan_id: int, phase: str) -> None:
+    conn = sqlite3.connect('scanner.db')
+    c = conn.cursor()
+    c.execute('UPDATE scans SET current_phase = ? WHERE id = ?', (phase, scan_id))
+    conn.commit()
+    conn.close()
+
 def save_vulnerability(scan_id: int | None, vuln_dict: Vulnerability) -> None:
     conn = sqlite3.connect('scanner.db')
     c = conn.cursor()
@@ -72,13 +87,14 @@ def save_vulnerability(scan_id: int | None, vuln_dict: Vulnerability) -> None:
     conn.close()
 
 
-def _row_to_scan_record(row: tuple[int, str, str, str, int]) -> ScanRecord:
-    scan_id, target_url, start_time, status, vuln_count = row
+def _row_to_scan_record(row: tuple[int, str, str, str, str | None, int]) -> ScanRecord:
+    scan_id, target_url, start_time, status, current_phase, vuln_count = row
     return {
         "id": scan_id,
         "target_url": target_url,
         "start_time": start_time,
         "status": status,
+        "current_phase": current_phase,
         "vulnerability_count": vuln_count,
     }
 
@@ -87,7 +103,7 @@ def get_scan(scan_id: int) -> ScanRecord | None:
     conn = sqlite3.connect('scanner.db')
     c = conn.cursor()
     c.execute('''
-        SELECT s.id, s.target_url, s.start_time, s.status, COUNT(v.id)
+        SELECT s.id, s.target_url, s.start_time, s.status, s.current_phase, COUNT(v.id)
         FROM scans s
         LEFT JOIN vulnerabilities v ON v.scan_id = s.id
         WHERE s.id = ?
@@ -102,7 +118,7 @@ def get_all_scans() -> list[ScanRecord]:
     conn = sqlite3.connect('scanner.db')
     c = conn.cursor()
     c.execute('''
-        SELECT s.id, s.target_url, s.start_time, s.status, COUNT(v.id)
+        SELECT s.id, s.target_url, s.start_time, s.status, s.current_phase, COUNT(v.id)
         FROM scans s
         LEFT JOIN vulnerabilities v ON v.scan_id = s.id
         GROUP BY s.id

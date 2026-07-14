@@ -14,6 +14,7 @@ export interface Scan {
   target_url: string;
   start_time: string;
   status: ScanStatus;
+  current_phase: string | null;
   vulnerability_count: number;
 }
 

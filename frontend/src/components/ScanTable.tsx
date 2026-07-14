@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { Scan } from '../api';
+import { phaseLabel } from '../phaseLabels';
 import StatusBadge from './StatusBadge';
 
 export default function ScanTable({ scans, onDelete }: { scans: Scan[]; onDelete: (id: number) => void }) {
@@ -34,6 +35,9 @@ export default function ScanTable({ scans, onDelete }: { scans: Scan[]; onDelete
               <td className="px-4 py-2 whitespace-nowrap text-slate-600 dark:text-slate-400">{scan.start_time}</td>
               <td className="px-4 py-2">
                 <StatusBadge status={scan.status} />
+                {scan.status === 'running' && (
+                  <div className="mt-0.5 text-xs text-slate-500">{phaseLabel(scan.current_phase)}</div>
+                )}
               </td>
               <td className="px-4 py-2">
                 {scan.vulnerability_count > 0 ? (
